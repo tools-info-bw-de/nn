@@ -466,9 +466,54 @@ button:disabled {
   text-anchor: middle;
 }
 
+.loader {
+  width: 16px;
+  height: 16px;
+  border: 3px solid #000000;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  box-sizing: border-box;
+  animation: rotation 1s linear infinite;
+}
+
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 .loss-meta {
   margin: 0.6rem 0 0;
   font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.loss-meta > .header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.loss-meta > .header > .training {
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
+.loss-meta .last-loss {
+  font-weight: 600;
+}
+
+.values h4 {
+  margin: 0;
+  text-decoration: underline;
 }
 
 .dataset-modal {

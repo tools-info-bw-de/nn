@@ -1367,28 +1367,48 @@
       >
     </div>
 
-    <p class="loss-meta">
-      {isTraining ? "Training laeuft." : "Training beendet."}<br />
-      Epochen: {trainingEpochsDone}<br />
-      Max:
-      {#if hasLoss}
-        {Math.max(...activeTab.lossHistory).toFixed(6)}
-      {:else}
-        ---
-      {/if}<br />
-      Min:
-      {#if hasLoss}
-        {Math.min(...activeTab.lossHistory).toFixed(6)}
-      {:else}
-        ---
-      {/if}<br />
-      Letzt:
-      {#if hasLoss}
-        {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(6)}
-      {:else}
-        ---
-      {/if}
-    </p>
+    <div class="loss-meta">
+      <div class="header">
+        <div class={isTraining ? "training" : ""}>
+          {isTraining ? "Training läuft." : "Training beendet."}
+        </div>
+        {#if isTraining}
+          <span class="loader"></span>
+        {/if}
+      </div>
+
+      <div class="epochs">
+        Epochen: {trainingEpochsDone}
+      </div>
+
+      <div class="values">
+        <div><h4>Fehlerwerte</h4></div>
+        <div>
+          Max:
+          {#if hasLoss}
+            {Math.max(...activeTab.lossHistory).toFixed(6)}
+          {:else}
+            ---
+          {/if}
+        </div>
+        <div>
+          Min:
+          {#if hasLoss}
+            {Math.min(...activeTab.lossHistory).toFixed(6)}
+          {:else}
+            ---
+          {/if}
+        </div>
+        <div class="last-loss">
+          Letzter:
+          {#if hasLoss}
+            {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(6)}
+          {:else}
+            ---
+          {/if}
+        </div>
+      </div>
+    </div>
 
     <div>
       <svg
@@ -1459,7 +1479,7 @@
           Epoche
         </text>
         <text class="loss-axis-label" x="14" y={lossChart.padTop - 5}
-          >Fehler</text
+          >Fehlerfunktion</text
         >
       </svg>
     </div>

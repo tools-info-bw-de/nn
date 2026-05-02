@@ -533,6 +533,7 @@ func (t *Trainer) runLoop() {
 			return
 		}
 
+		// TODO: prüfen, ob das überhaupt noch genutzt wird:
 		deviation, err := computeMaxDeviationForNetwork(t.net, t.dataset)
 		if err != nil {
 			t.lastErr = err.Error()
