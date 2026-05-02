@@ -36,10 +36,97 @@
   let isTraining = false;
   let stopTrainingRequested = false;
   let trainingTabId = "";
+  let trainingTrainerId = "";
   let trainingEpochsDone = 0;
   let trainingLastLoss = null;
   let trainingDeviation = null;
   let liveInferenceRunId = 0;
+  let nnWorker = null;
+  let nnWorkerReadyPromise = null;
+  let nnWorkerRequestId = 0;
+  const nnWorkerPending = new Map();
+
+  function initWorker() {
+    if (nnWorkerReadyPromise) {
+      return nnWorkerReadyPromise;
+    }
+
+    nnWorkerReadyPromise = new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("./lib/nnWorker.js", import.meta.url));
+      nnWorker = worker;
+
+      const initRequestId = ++nnWorkerRequestId;
+
+      worker.onmessage = (event) => {
+        const msg = event.data;
+        if (!msg || typeof msg !== "object") {
+          return;
+        }
+
+        if (msg.type === "ready" && msg.id === initRequestId) {
+          resolve();
+          return;
+        }
+
+        if (msg.type !== "response") {
+          return;
+        }
+
+        const pending = nnWorkerPending.get(msg.id);
+        if (!pending) {
+          return;
+        }
+        nnWorkerPending.delete(msg.id);
+
+        if (msg.ok) {
+          pending.resolve(msg.result);
+        } else {
+          pending.reject(new Error(msg.error || "WASM-Worker Fehler"));
+        }
+      };
+
+      worker.onerror = (event) => {
+        const err = new Error(event.message || "WASM-Worker abgestuerzt.");
+        reject(err);
+      };
+
+      worker.postMessage({ type: "init", id: initRequestId });
+    });
+
+    return nnWorkerReadyPromise;
+  }
+
+  async function callWorker(method, payload = {}) {
+    await initWorker();
+
+    if (!nnWorker) {
+      throw new Error("WASM-Worker nicht verfuegbar.");
+    }
+
+    const requestId = ++nnWorkerRequestId;
+    return new Promise((resolve, reject) => {
+      nnWorkerPending.set(requestId, { resolve, reject });
+      nnWorker.postMessage({
+        type: "call",
+        id: requestId,
+        method,
+        payload,
+      });
+    });
+  }
+
+  function disposeWorker() {
+    for (const pending of nnWorkerPending.values()) {
+      pending.reject(new Error("WASM-Worker wurde beendet."));
+    }
+    nnWorkerPending.clear();
+
+    if (nnWorker) {
+      nnWorker.terminate();
+      nnWorker = null;
+    }
+    nnWorkerReadyPromise = null;
+  }
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -64,6 +151,7 @@
         () => "-",
       ),
       lossHistory: [],
+      trainerId: "",
       state: null,
     };
   }
@@ -130,14 +218,6 @@
     });
   }
 
-  function parseJsonResponse(raw) {
-    const parsed = JSON.parse(raw);
-    if (parsed?.error) {
-      throw new Error(parsed.error);
-    }
-    return parsed;
-  }
-
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -181,14 +261,10 @@
     let maxDeviation = 0;
 
     for (const sample of dataset) {
-      const response = parseJsonResponse(
-        window.nnForward(
-          JSON.stringify({
-            state,
-            input: sample.input,
-          }),
-        ),
-      );
+      const response = await callWorker("nnForward", {
+        state,
+        input: sample.input,
+      });
 
       for (let i = 0; i < sample.target.length; i += 1) {
         const outputValue = Number(response.output?.[i] ?? 0);
@@ -276,54 +352,17 @@
       return;
     }
 
-    if (typeof window.Go !== "function") {
-      throw new Error(
-        "wasm_exec.js wurde nicht geladen. Stelle sicher, dass public/wasm_exec.js vorhanden ist.",
-      );
-    }
-
-    const go = new window.Go();
-    let instance;
-
-    try {
-      const result = await WebAssembly.instantiateStreaming(
-        fetch("/nn.wasm"),
-        go.importObject,
-      );
-      instance = result.instance;
-    } catch {
-      const response = await fetch("/nn.wasm");
-      if (!response.ok) {
-        throw new Error(
-          `nn.wasm konnte nicht geladen werden (HTTP ${response.status}).`,
-        );
-      }
-      const bytes = await response.arrayBuffer();
-      const result = await WebAssembly.instantiate(bytes, go.importObject);
-      instance = result.instance;
-    }
-
-    go.run(instance);
+    await initWorker();
     wasmReady = true;
 
-    const listed = parseJsonResponse(window.nnListActivations());
+    const listed = await callWorker("nnListActivations");
     if (Array.isArray(listed?.activations) && listed.activations.length > 0) {
       availableActivations = listed.activations;
     }
   }
 
-  function requireApi() {
-    const ok =
-      typeof window.nnCreateState === "function" &&
-      typeof window.nnTrain === "function" &&
-      typeof window.nnForward === "function" &&
-      typeof window.nnListActivations === "function";
-
-    if (!ok) {
-      throw new Error(
-        "WASM-API nicht verfuegbar. Build der Go-WASM-Datei pruefen.",
-      );
-    }
+  async function requireApi() {
+    await initWorker();
   }
 
   async function withBusy(task) {
@@ -340,7 +379,7 @@
 
   async function createStateForTab(tabId) {
     await initWasm();
-    requireApi();
+    await requireApi();
 
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) {
@@ -353,9 +392,7 @@
       learning_rate: Number(tab.learningRate),
     };
 
-    const result = parseJsonResponse(
-      window.nnCreateState(JSON.stringify(payload)),
-    );
+    const result = await callWorker("nnCreateState", payload);
 
     updateTab(tabId, (t) => {
       t.state = result.state;
@@ -379,7 +416,7 @@
         return;
       }
 
-      requireApi();
+      await requireApi();
 
       let tab = tabs.find((entry) => entry.id === tabId);
       if (!tab) {
@@ -402,9 +439,7 @@
         input: parseNeuronInputs(tab),
       };
 
-      const result = parseJsonResponse(
-        window.nnForward(JSON.stringify(payload)),
-      );
+      const result = await callWorker("nnForward", payload);
 
       if (runId !== liveInferenceRunId) {
         return;
@@ -446,7 +481,7 @@
 
     try {
       await initWasm();
-      requireApi();
+      await requireApi();
       await ensureStateForActiveTab();
 
       const active = getActiveTab();
@@ -457,14 +492,36 @@
         );
       }
 
+      const initResult = await callWorker("nnTrainerInit", {
+        state: active.state,
+        dataset,
+        learning_rate: Number(active.learningRate),
+        shuffle: Boolean(active.shuffle),
+      });
+
+      const trainerId = String(initResult.trainer_id || "");
+      if (!trainerId) {
+        throw new Error(
+          "Training konnte nicht gestartet werden (trainer_id fehlt).",
+        );
+      }
+
       isTraining = true;
       stopTrainingRequested = false;
       trainingTabId = active.id;
+      trainingTrainerId = trainerId;
       trainingEpochsDone = 0;
       trainingLastLoss = null;
       trainingDeviation = null;
       lossWindowOpen = true;
       status = `${active.name}: Training gestartet.`;
+
+      updateTab(active.id, (next) => {
+        next.lossHistory = [];
+        next.trainerId = trainerId;
+      });
+
+      await callWorker("nnTrainerStart", { trainer_id: trainerId });
 
       while (!stopTrainingRequested) {
         const tab = tabs.find((entry) => entry.id === trainingTabId);
@@ -473,55 +530,76 @@
           break;
         }
 
-        const payload = {
-          state: tab.state,
-          dataset,
-          epochs: 1,
-          learning_rate: Number(tab.learningRate),
-          shuffle: Boolean(tab.shuffle),
-        };
+        const trainStatus = await callWorker("nnTrainerStatus", {
+          trainer_id: trainingTrainerId,
+        });
 
-        const result = parseJsonResponse(
-          window.nnTrain(JSON.stringify(payload)),
-        );
-        const currentLoss = Number(result.final_loss);
-        const currentDeviation = await computeMaxDeviation(
-          result.state,
-          dataset,
-        );
+        const currentLoss = trainStatus.has_final_loss
+          ? Number(trainStatus.final_loss)
+          : null;
+        const currentDeviation = Number(trainStatus.deviation ?? 0);
+        const currentEpochsDone = Number(trainStatus.epochs_done ?? 0);
 
         updateTab(trainingTabId, (next) => {
-          next.state = result.state;
-          next.lossHistory = [...next.lossHistory, currentLoss];
+          next.state = trainStatus.state;
+          next.lossHistory = Array.isArray(trainStatus.loss_history)
+            ? trainStatus.loss_history
+            : next.lossHistory;
         });
 
         if (trainingTabId === activeTabId) {
           runLiveInferenceForTab(trainingTabId, { ensureState: false });
         }
 
-        trainingEpochsDone += 1;
+        trainingEpochsDone = currentEpochsDone;
         trainingLastLoss = currentLoss;
         trainingDeviation = currentDeviation;
 
-        status = `${tab.name}: Training Epoche ${trainingEpochsDone}, Loss ${currentLoss.toFixed(6)}, Abweichung ${currentDeviation.toFixed(6)}`;
+        if (currentLoss !== null) {
+          status = `${tab.name}: Training Epoche ${trainingEpochsDone}, Loss ${currentLoss.toFixed(6)}, Abweichung ${currentDeviation.toFixed(6)}`;
+        }
 
-        if (currentDeviation === 0) {
-          status = `${tab.name}: Ziel erreicht (Abweichung 0 nach ${trainingEpochsDone} Epochen).`;
+        if (!trainStatus.running) {
           break;
         }
 
         await delay(50);
       }
 
+      if (trainingTrainerId) {
+        await callWorker("nnTrainerStop", {
+          trainer_id: trainingTrainerId,
+        });
+
+        const finalStatus = await callWorker("nnTrainerStatus", {
+          trainer_id: trainingTrainerId,
+        });
+
+        updateTab(trainingTabId, (next) => {
+          next.state = finalStatus.state;
+          next.lossHistory = Array.isArray(finalStatus.loss_history)
+            ? finalStatus.loss_history
+            : next.lossHistory;
+        });
+
+        await callWorker("nnTrainerDispose", {
+          trainer_id: trainingTrainerId,
+        });
+      }
+
       if (stopTrainingRequested) {
         const tab = tabs.find((entry) => entry.id === trainingTabId);
         status = `${tab?.name ?? "Netz"}: Training manuell abgebrochen.`;
+      } else if (trainingDeviation === 0) {
+        const tab = tabs.find((entry) => entry.id === trainingTabId);
+        status = `${tab?.name ?? "Netz"}: Ziel erreicht (Abweichung 0).`;
       }
     } catch (error) {
       errorText = error instanceof Error ? error.message : String(error);
     } finally {
       isTraining = false;
       stopTrainingRequested = false;
+      trainingTrainerId = "";
       trainingTabId = "";
     }
   }
@@ -571,7 +649,9 @@
 
     // focus input
     setTimeout(() => {
-      const input = document.querySelector(`.tab-pill.active .rename-input`);
+      const input = /** @type {HTMLInputElement | null} */ (
+        document.querySelector(`.tab-pill.active .rename-input`)
+      );
       console.log(input);
       if (input) {
         input.focus();
@@ -788,25 +868,77 @@
     lossWindowDragging = false;
   }
 
-  $: lossPath = (() => {
+  $: lossChart = (() => {
     const history = activeTab?.lossHistory || [];
-    if (history.length < 2) {
-      return "";
+
+    const width = 640;
+    const height = 220;
+    const padLeft = 44;
+    const padRight = 12;
+    const padTop = 10;
+    const padBottom = 28;
+
+    const plotWidth = width - padLeft - padRight;
+    const plotHeight = height - padTop - padBottom;
+
+    const yMin = 0;
+    const yMax = Math.max(1, history.length > 0 ? Math.max(...history) : 0);
+    const yRange = yMax - yMin || 1;
+
+    const xMinEpoch = 1;
+    const xMaxEpoch = Math.max(2, history.length);
+    const xRange = xMaxEpoch - xMinEpoch || 1;
+
+    const toX = (epoch) => padLeft + ((epoch - xMinEpoch) / xRange) * plotWidth;
+    const toY = (value) => padTop + (1 - (value - yMin) / yRange) * plotHeight;
+
+    const linePoints =
+      history.length >= 2
+        ? history.map((v, i) => `${toX(i + 1)},${toY(v)}`).join(" ")
+        : "";
+
+    const yTickCount = 4;
+    const yTicks = Array.from({ length: yTickCount + 1 }, (_, i) => {
+      const value = yMin + (i / yTickCount) * (yMax - yMin);
+      const decimals = yMax < 1 ? 3 : yMax < 10 ? 2 : 1;
+      return {
+        y: toY(value),
+        value,
+        label: value.toFixed(decimals),
+      };
+    });
+
+    const desiredXTicks = 6;
+    const xTicks = [];
+    const step = Math.max(
+      1,
+      Math.ceil((xMaxEpoch - xMinEpoch) / (desiredXTicks - 1)),
+    );
+
+    for (let epoch = xMinEpoch; epoch <= xMaxEpoch; epoch += step) {
+      xTicks.push({ epoch, x: toX(epoch) });
     }
 
-    const w = 640;
-    const h = 220;
-    const min = Math.min(...history);
-    const max = Math.max(...history);
-    const range = max - min || 1;
+    if (xTicks[xTicks.length - 1]?.epoch !== xMaxEpoch) {
+      xTicks.push({ epoch: xMaxEpoch, x: toX(xMaxEpoch) });
+    }
 
-    return history
-      .map((v, i) => {
-        const x = (i / (history.length - 1)) * w;
-        const y = h - ((v - min) / range) * h;
-        return `${x},${y}`;
-      })
-      .join(" ");
+    return {
+      width,
+      height,
+      padLeft,
+      padRight,
+      padTop,
+      padBottom,
+      plotWidth,
+      plotHeight,
+      yTicks,
+      xTicks,
+      linePoints,
+      xAxisY: padTop + plotHeight,
+      yAxisX: padLeft,
+      hasLine: history.length >= 2,
+    };
   })();
 
   onMount(() => {
@@ -815,7 +947,7 @@
 
     withBusy(async () => {
       await initWasm();
-      requireApi();
+      await requireApi();
       await createStateForTab(activeTabId);
       status = "Bereit. Du kannst jetzt pro Tab ein separates Netz bearbeiten.";
     });
@@ -823,6 +955,7 @@
     return () => {
       window.removeEventListener("mousemove", onGlobalMouseMove);
       window.removeEventListener("mouseup", onGlobalMouseUp);
+      disposeWorker();
     };
   });
 </script>
@@ -1093,20 +1226,79 @@
           </p>
         {/if}
 
-        {#if hasLoss}
-          <svg
-            viewBox="0 0 640 220"
-            class="loss-chart"
-            role="img"
-            aria-label="Loss Verlauf"
-          >
+        <svg
+          viewBox={`0 0 ${lossChart.width} ${lossChart.height}`}
+          class="loss-chart"
+          role="img"
+          aria-label="Loss Verlauf mit Skalen"
+        >
+          <line
+            class="loss-axis"
+            x1={lossChart.yAxisX}
+            y1={lossChart.padTop}
+            x2={lossChart.yAxisX}
+            y2={lossChart.xAxisY}
+          ></line>
+          <line
+            class="loss-axis"
+            x1={lossChart.yAxisX}
+            y1={lossChart.xAxisY}
+            x2={lossChart.yAxisX + lossChart.plotWidth}
+            y2={lossChart.xAxisY}
+          ></line>
+
+          {#each lossChart.yTicks as tick}
+            <line
+              class="loss-grid"
+              x1={lossChart.yAxisX}
+              y1={tick.y}
+              x2={lossChart.yAxisX + lossChart.plotWidth}
+              y2={tick.y}
+            ></line>
+            <text
+              class="loss-tick loss-tick-y"
+              x={lossChart.yAxisX - 6}
+              y={tick.y + 3}>{tick.label}</text
+            >
+          {/each}
+
+          {#each lossChart.xTicks as tick}
+            <line
+              class="loss-tick-mark"
+              x1={tick.x}
+              y1={lossChart.xAxisY}
+              x2={tick.x}
+              y2={lossChart.xAxisY + 4}
+            ></line>
+            <text
+              class="loss-tick loss-tick-x"
+              x={tick.x}
+              y={lossChart.xAxisY + 16}>{tick.epoch}</text
+            >
+          {/each}
+
+          {#if lossChart.hasLine}
             <polyline
-              points={lossPath}
+              points={lossChart.linePoints}
               fill="none"
               stroke="var(--accent)"
               stroke-width="2.5"
             ></polyline>
-          </svg>
+          {/if}
+
+          <text
+            class="loss-axis-label"
+            x={lossChart.yAxisX + lossChart.plotWidth / 2}
+            y={lossChart.height - 4}
+          >
+            Epoche
+          </text>
+          <text class="loss-axis-label" x="14" y={lossChart.padTop + 2}
+            >Loss</text
+          >
+        </svg>
+
+        {#if hasLoss}
           <p class="loss-meta">
             Min: {Math.min(...activeTab.lossHistory).toFixed(6)} | Max: {Math.max(
               ...activeTab.lossHistory,
@@ -1115,7 +1307,9 @@
             ].toFixed(6)}
           </p>
         {:else}
-          <p>Kein Verlauf vorhanden. Starte zuerst ein Training.</p>
+          <p class="loss-meta">
+            Kein Verlauf vorhanden. Starte zuerst ein Training.
+          </p>
         {/if}
       </div>
     </div>

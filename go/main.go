@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sync"
 	"syscall/js"
 	"time"
 )
@@ -55,6 +56,29 @@ type ForwardResponse struct {
 	Output []float64 `json:"output"`
 }
 
+type TrainerInitRequest struct {
+	State        NetworkState `json:"state"`
+	Dataset      []Sample     `json:"dataset"`
+	LearningRate *float64     `json:"learning_rate,omitempty"`
+	Shuffle      bool         `json:"shuffle,omitempty"`
+}
+
+type TrainerCommandRequest struct {
+	TrainerID string `json:"trainer_id"`
+}
+
+type TrainerStatusResponse struct {
+	TrainerID    string       `json:"trainer_id"`
+	Running      bool         `json:"running"`
+	EpochsDone   int          `json:"epochs_done"`
+	LossHistory  []float64    `json:"loss_history"`
+	FinalLoss    float64      `json:"final_loss"`
+	HasFinalLoss bool         `json:"has_final_loss"`
+	Deviation    float64      `json:"deviation"`
+	State        NetworkState `json:"state"`
+	Error        string       `json:"error,omitempty"`
+}
+
 type Network struct {
 	weights      [][][]float64
 	biases       [][]float64
@@ -72,7 +96,27 @@ type NetworkState struct {
 
 var (
 	callbacks []js.Func
+	trainers  = map[string]*Trainer{}
+	trainersM sync.Mutex
 )
+
+type Trainer struct {
+	id           string
+	net          *Network
+	dataset      []Sample
+	learningRate *float64
+	shuffle      bool
+
+	mu          sync.Mutex
+	running     bool
+	stop        bool
+	epochsDone  int
+	lossHistory []float64
+	finalLoss   float64
+	hasFinal    bool
+	deviation   float64
+	lastErr     string
+}
 
 func clone3D(src [][][]float64) [][][]float64 {
 	dst := make([][][]float64, len(src))
@@ -447,6 +491,76 @@ func (n *Network) Train(dataset []Sample, epochs int, lrOverride *float64, shuff
 	}, nil
 }
 
+func computeMaxDeviationForNetwork(net *Network, dataset []Sample) (float64, error) {
+	maxDeviation := 0.0
+
+	for _, sample := range dataset {
+		output, err := net.Forward(sample.Input)
+		if err != nil {
+			return 0, err
+		}
+
+		for i := 0; i < len(sample.Target); i++ {
+			diff := math.Abs(output[i] - sample.Target[i])
+			if diff > maxDeviation {
+				maxDeviation = diff
+			}
+		}
+	}
+
+	return maxDeviation, nil
+}
+
+func newTrainerID() string {
+	return fmt.Sprintf("trainer-%d-%d", time.Now().UnixNano(), rand.Int63())
+}
+
+func (t *Trainer) runLoop() {
+	for {
+		t.mu.Lock()
+		shouldStop := t.stop
+		if shouldStop {
+			t.running = false
+			t.mu.Unlock()
+			return
+		}
+
+		res, err := t.net.Train(t.dataset, 1, t.learningRate, t.shuffle)
+		if err != nil {
+			t.lastErr = err.Error()
+			t.running = false
+			t.mu.Unlock()
+			return
+		}
+
+		deviation, err := computeMaxDeviationForNetwork(t.net, t.dataset)
+		if err != nil {
+			t.lastErr = err.Error()
+			t.running = false
+			t.mu.Unlock()
+			return
+		}
+
+		t.epochsDone += 1
+		t.lossHistory = append(t.lossHistory, res.FinalLoss)
+		t.finalLoss = res.FinalLoss
+		t.hasFinal = true
+		t.deviation = deviation
+		t.mu.Unlock()
+	}
+}
+
+func getTrainer(trainerID string) (*Trainer, error) {
+	trainersM.Lock()
+	defer trainersM.Unlock()
+
+	trainer, ok := trainers[trainerID]
+	if !ok {
+		return nil, fmt.Errorf("trainer_id nicht gefunden")
+	}
+	return trainer, nil
+}
+
 func decodeJSONArg[T any](args []js.Value, idx int, out *T) error {
 	if len(args) <= idx {
 		return fmt.Errorf("Argument %d fehlt", idx)
@@ -522,6 +636,129 @@ func trainJS(_ js.Value, args []js.Value) any {
 	return encodeJSON(res)
 }
 
+func trainerInitJS(_ js.Value, args []js.Value) any {
+	var req TrainerInitRequest
+	if err := decodeJSONArg(args, 0, &req); err != nil {
+		return errJSON(err)
+	}
+
+	if len(req.Dataset) == 0 {
+		return errJSON(fmt.Errorf("dataset darf nicht leer sein"))
+	}
+
+	net, err := networkFromState(req.State)
+	if err != nil {
+		return errJSON(err)
+	}
+
+	trainerID := newTrainerID()
+	trainer := &Trainer{
+		id:           trainerID,
+		net:          net,
+		dataset:      append([]Sample(nil), req.Dataset...),
+		learningRate: req.LearningRate,
+		shuffle:      req.Shuffle,
+		lossHistory:  []float64{},
+	}
+
+	trainersM.Lock()
+	trainers[trainerID] = trainer
+	trainersM.Unlock()
+
+	return encodeJSON(map[string]any{"trainer_id": trainerID})
+}
+
+func trainerStartJS(_ js.Value, args []js.Value) any {
+	var req TrainerCommandRequest
+	if err := decodeJSONArg(args, 0, &req); err != nil {
+		return errJSON(err)
+	}
+
+	trainer, err := getTrainer(req.TrainerID)
+	if err != nil {
+		return errJSON(err)
+	}
+
+	trainer.mu.Lock()
+	if trainer.running {
+		trainer.mu.Unlock()
+		return encodeJSON(map[string]any{"ok": true})
+	}
+
+	trainer.stop = false
+	trainer.running = true
+	trainer.lastErr = ""
+	trainer.mu.Unlock()
+
+	go trainer.runLoop()
+
+	return encodeJSON(map[string]any{"ok": true})
+}
+
+func trainerStatusJS(_ js.Value, args []js.Value) any {
+	var req TrainerCommandRequest
+	if err := decodeJSONArg(args, 0, &req); err != nil {
+		return errJSON(err)
+	}
+
+	trainer, err := getTrainer(req.TrainerID)
+	if err != nil {
+		return errJSON(err)
+	}
+
+	trainer.mu.Lock()
+	res := TrainerStatusResponse{
+		TrainerID:    trainer.id,
+		Running:      trainer.running,
+		EpochsDone:   trainer.epochsDone,
+		LossHistory:  append([]float64(nil), trainer.lossHistory...),
+		FinalLoss:    trainer.finalLoss,
+		HasFinalLoss: trainer.hasFinal,
+		Deviation:    trainer.deviation,
+		State:        trainer.net.ToState(),
+		Error:        trainer.lastErr,
+	}
+	trainer.mu.Unlock()
+
+	if res.Error != "" {
+		return errJSON(fmt.Errorf(res.Error))
+	}
+
+	return encodeJSON(res)
+}
+
+func trainerStopJS(_ js.Value, args []js.Value) any {
+	var req TrainerCommandRequest
+	if err := decodeJSONArg(args, 0, &req); err != nil {
+		return errJSON(err)
+	}
+
+	trainer, err := getTrainer(req.TrainerID)
+	if err != nil {
+		return errJSON(err)
+	}
+
+	trainer.mu.Lock()
+	trainer.stop = true
+	trainer.running = false
+	trainer.mu.Unlock()
+
+	return encodeJSON(map[string]any{"ok": true})
+}
+
+func trainerDisposeJS(_ js.Value, args []js.Value) any {
+	var req TrainerCommandRequest
+	if err := decodeJSONArg(args, 0, &req); err != nil {
+		return errJSON(err)
+	}
+
+	trainersM.Lock()
+	delete(trainers, req.TrainerID)
+	trainersM.Unlock()
+
+	return encodeJSON(map[string]any{"ok": true})
+}
+
 func listActivationsJS(_ js.Value, _ []js.Value) any {
 	return encodeJSON(map[string]any{
 		"activations": []string{"binary", "logistic", "relu"},
@@ -539,8 +776,13 @@ func main() {
 	register("nnForward", forwardJS)
 	register("nnTrain", trainJS)
 	register("nnListActivations", listActivationsJS)
+	register("nnTrainerInit", trainerInitJS)
+	register("nnTrainerStart", trainerStartJS)
+	register("nnTrainerStatus", trainerStatusJS)
+	register("nnTrainerStop", trainerStopJS)
+	register("nnTrainerDispose", trainerDisposeJS)
 
-	println("WASM bereit: nnCreateState, nnForward, nnTrain, nnListActivations")
+	println("WASM bereit: nnCreateState, nnForward, nnTrain, nnListActivations, nnTrainerInit, nnTrainerStart, nnTrainerStatus, nnTrainerStop, nnTrainerDispose")
 
 	select {}
 }
