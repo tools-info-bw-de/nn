@@ -12,7 +12,7 @@
     2,
   );
 
-  const defaultInput = "1, 0";
+  const defaultInputValues = [1, 0];
 
   let wasmReady = false;
   let busy = false;
@@ -39,23 +39,30 @@
   let trainingEpochsDone = 0;
   let trainingLastLoss = null;
   let trainingDeviation = null;
+  let liveInferenceRunId = 0;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
   }
 
   function createTab(nr) {
+    const layers = [2, 3, 1];
     return {
       id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: `Netz ${nr}`,
-      layers: [2, 3, 1],
+      layers,
       activation: "logistic",
       learningRate: 0.1,
       epochs: 200,
       shuffle: true,
       datasetText: defaultDataset,
-      forwardInputText: defaultInput,
-      forwardOutputText: "",
+      inputNeuronValues: Array.from({ length: layers[0] }, (_, idx) =>
+        String(defaultInputValues[idx] ?? 0),
+      ),
+      outputNeuronValues: Array.from(
+        { length: layers[layers.length - 1] },
+        () => "-",
+      ),
       lossHistory: [],
       state: null,
     };
@@ -84,11 +91,43 @@
     updateTab(activeTabId, updater);
   }
 
-  function parseNumberList(text) {
-    return text
-      .split(",")
-      .map((value) => Number(value.trim()))
-      .filter((value) => Number.isFinite(value));
+  function normalizeTabNeuronIo(tab) {
+    const inputCount = tab.layers[0] ?? 0;
+    const outputCount = tab.layers[tab.layers.length - 1] ?? 0;
+
+    const prevInputs = Array.isArray(tab.inputNeuronValues)
+      ? tab.inputNeuronValues
+      : [];
+
+    tab.inputNeuronValues = Array.from(
+      { length: inputCount },
+      (_, idx) => prevInputs[idx] ?? "0",
+    );
+
+    const prevOutputs = Array.isArray(tab.outputNeuronValues)
+      ? tab.outputNeuronValues
+      : [];
+
+    tab.outputNeuronValues = Array.from(
+      { length: outputCount },
+      (_, idx) => prevOutputs[idx] ?? "-",
+    );
+  }
+
+  function parseNeuronInputs(tab) {
+    return (tab.inputNeuronValues || []).map((value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+  }
+
+  function mapOutputsToStrings(tab, outputValues) {
+    const outputCount = tab.layers[tab.layers.length - 1] ?? 0;
+    return Array.from({ length: outputCount }, (_, idx) => {
+      const raw = outputValues?.[idx];
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed.toFixed(4) : "-";
+    });
   }
 
   function parseJsonResponse(raw) {
@@ -320,9 +359,66 @@
 
     updateTab(tabId, (t) => {
       t.state = result.state;
-      t.forwardOutputText = "";
+      normalizeTabNeuronIo(t);
+      t.outputNeuronValues = Array.from(
+        { length: t.layers[t.layers.length - 1] },
+        () => "-",
+      );
       t.lossHistory = [];
     });
+
+    await runLiveInferenceForTab(tabId, { ensureState: false });
+  }
+
+  async function runLiveInferenceForTab(tabId, options = {}) {
+    const { ensureState = false } = options;
+    const runId = ++liveInferenceRunId;
+
+    try {
+      if (!wasmReady) {
+        return;
+      }
+
+      requireApi();
+
+      let tab = tabs.find((entry) => entry.id === tabId);
+      if (!tab) {
+        return;
+      }
+
+      if (!tab.state) {
+        if (!ensureState) {
+          return;
+        }
+        await createStateForTab(tabId);
+        tab = tabs.find((entry) => entry.id === tabId);
+        if (!tab?.state) {
+          return;
+        }
+      }
+
+      const payload = {
+        state: tab.state,
+        input: parseNeuronInputs(tab),
+      };
+
+      const result = parseJsonResponse(
+        window.nnForward(JSON.stringify(payload)),
+      );
+
+      if (runId !== liveInferenceRunId) {
+        return;
+      }
+
+      updateTab(tabId, (next) => {
+        normalizeTabNeuronIo(next);
+        next.outputNeuronValues = mapOutputsToStrings(next, result.output);
+      });
+    } catch (error) {
+      if (tabId === activeTabId) {
+        errorText = error instanceof Error ? error.message : String(error);
+      }
+    }
   }
 
   function randomizeActiveState() {
@@ -399,6 +495,10 @@
           next.lossHistory = [...next.lossHistory, currentLoss];
         });
 
+        if (trainingTabId === activeTabId) {
+          runLiveInferenceForTab(trainingTabId, { ensureState: false });
+        }
+
         trainingEpochsDone += 1;
         trainingLastLoss = currentLoss;
         trainingDeviation = currentDeviation;
@@ -435,36 +535,17 @@
     return trainActive();
   }
 
-  function inferActive() {
-    return withBusy(async () => {
-      await initWasm();
-      requireApi();
-      await ensureStateForActiveTab();
-
-      const active = getActiveTab();
-      const input = parseNumberList(active.forwardInputText);
-      const payload = {
-        state: active.state,
-        input,
-      };
-
-      const result = parseJsonResponse(
-        window.nnForward(JSON.stringify(payload)),
-      );
-      updateActiveTab((t) => {
-        t.forwardOutputText = JSON.stringify(result.output);
-      });
-
-      status = `${active.name}: Inferenz ausgefuehrt.`;
-    });
-  }
-
   function addTab() {
     tabCounter += 1;
     const next = createTab(tabCounter);
     tabs = [...tabs, next];
     activeTabId = next.id;
     status = `${next.name} erstellt.`;
+  }
+
+  function activateTab(tabId) {
+    activeTabId = tabId;
+    runLiveInferenceForTab(tabId, { ensureState: false });
   }
 
   function closeTab(tabId) {
@@ -537,7 +618,11 @@
       tab.layers[layerIndex] = nextCount;
       tab.state = null;
       tab.lossHistory = [];
-      tab.forwardOutputText = "";
+      normalizeTabNeuronIo(tab);
+      tab.outputNeuronValues = Array.from(
+        { length: tab.layers[tab.layers.length - 1] },
+        () => "-",
+      );
     });
   }
 
@@ -546,7 +631,11 @@
       tab.layers.splice(tab.layers.length - 1, 0, 3);
       tab.state = null;
       tab.lossHistory = [];
-      tab.forwardOutputText = "";
+      normalizeTabNeuronIo(tab);
+      tab.outputNeuronValues = Array.from(
+        { length: tab.layers[tab.layers.length - 1] },
+        () => "-",
+      );
     });
   }
 
@@ -558,7 +647,11 @@
       tab.layers.splice(tab.layers.length - 2, 1);
       tab.state = null;
       tab.lossHistory = [];
-      tab.forwardOutputText = "";
+      normalizeTabNeuronIo(tab);
+      tab.outputNeuronValues = Array.from(
+        { length: tab.layers[tab.layers.length - 1] },
+        () => "-",
+      );
     });
   }
 
@@ -568,10 +661,15 @@
     });
   }
 
-  function setForwardInputText(value) {
+  function setInputNeuronValue(nodeIndex, value) {
+    const tabId = activeTabId;
+
     updateActiveTab((tab) => {
-      tab.forwardInputText = value;
+      normalizeTabNeuronIo(tab);
+      tab.inputNeuronValues[nodeIndex] = value;
     });
+
+    runLiveInferenceForTab(tabId, { ensureState: true });
   }
 
   function setEpochs(value) {
@@ -734,7 +832,7 @@
     <div class="tab-row">
       {#each tabs as tab}
         <div class={`tab-pill ${tab.id === activeTabId ? "active" : ""}`}>
-          <button class="tab-open" on:click={() => (activeTabId = tab.id)}>
+          <button class="tab-open" on:click={() => activateTab(tab.id)}>
             {#if renamingTabId === tab.id}
               <input
                 class="rename-input"
@@ -787,7 +885,7 @@
       <input
         type="number"
         min="0.001"
-        step="0.01"
+        step="0.001"
         value={activeTab.learningRate}
         on:input={(e) => setActiveLearningRate(e.currentTarget.value)}
       />
@@ -821,8 +919,12 @@
     >
   </section>
 
-  <section class="network-controls">
-    <h2>Netzstruktur</h2>
+  <section class="network-graph-wrap">
+    <h2>Live-Netzansicht (Klicken zum Bearbeiten)</h2>
+    <p class="hint">
+      Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf
+      Knoten in Hidden/Output, um Bias zu aendern.
+    </p>
     <div class="layer-controls">
       {#each activeTab.layers as count, layerIndex}
         <label>
@@ -855,14 +957,6 @@
         >
       </div>
     </div>
-  </section>
-
-  <section class="network-graph-wrap">
-    <h2>Live-Netzansicht (Klicken zum Bearbeiten)</h2>
-    <p class="hint">
-      Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf
-      Knoten in Hidden/Output, um Bias zu aendern.
-    </p>
     <div class="graph-scroll">
       <svg
         class="network-graph"
@@ -904,6 +998,21 @@
             {#if node.layer === 0}
               <circle class="node input" cx={node.x} cy={node.y} r="16"
               ></circle>
+              <foreignObject
+                class="node-input-wrap"
+                x={Math.max(8, node.x - 70)}
+                y={node.y - 13}
+                width="50"
+                height="22"
+              >
+                <input
+                  class="node-input"
+                  type="number"
+                  value={activeTab.inputNeuronValues?.[node.node] ?? "0"}
+                  on:input={(e) =>
+                    setInputNeuronValue(node.node, e.currentTarget.value)}
+                />
+              </foreignObject>
             {:else}
               <circle
                 class="node editable"
@@ -931,25 +1040,15 @@
                 ).toFixed(2)}
               </text>
             {/if}
+            {#if node.layer === activeTab.layers.length - 1}
+              <text class="node-output" x={node.x + 24} y={node.y + 4}>
+                {activeTab.outputNeuronValues?.[node.node] ?? "-"}
+              </text>
+            {/if}
           </g>
         {/each}
       </svg>
     </div>
-  </section>
-
-  <section class="inference">
-    <h2>Inferenz</h2>
-    <label>
-      Input (CSV)
-      <input
-        value={activeTab.forwardInputText}
-        on:input={(e) => setForwardInputText(e.currentTarget.value)}
-      />
-    </label>
-    <button on:click={inferActive} disabled={busy || isTraining}
-      >Inferenz ausfuehren</button
-    >
-    <p class="output">Output: {activeTab.forwardOutputText || "-"}</p>
   </section>
 
   <footer class="status">
@@ -967,20 +1066,18 @@
         aria-modal="true"
         style={`left: ${lossWindowPosition.x}px; top: ${lossWindowPosition.y}px;`}
       >
-        <div class="modal-head">
-          <div
-            class="modal-drag-handle"
-            role="button"
-            tabindex="0"
-            on:mousedown={startLossWindowDrag}
-            on:keydown={(e) => {
-              if (e.key === "Escape") {
-                lossWindowOpen = false;
-              }
-            }}
-          >
-            Fehlerentwicklung pro Epoche
-          </div>
+        <div
+          class="modal-head modal-drag-handle"
+          role="button"
+          tabindex="0"
+          on:mousedown={startLossWindowDrag}
+          on:keydown={(e) => {
+            if (e.key === "Escape") {
+              lossWindowOpen = false;
+            }
+          }}
+        >
+          <div class="">Fehlerentwicklung pro Epoche</div>
           <button on:click={() => (lossWindowOpen = false)}>X</button>
         </div>
 

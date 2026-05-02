@@ -51,7 +51,6 @@ body {
 .toolbar,
 .network-controls,
 .network-graph-wrap,
-.inference,
 .status {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -174,6 +173,10 @@ textarea {
   padding: 0.5rem 0.55rem;
 }
 
+.layer-controls input {
+  width: 6rem;
+}
+
 textarea {
   resize: vertical;
   min-height: 8rem;
@@ -209,8 +212,7 @@ button:disabled {
 }
 
 .network-controls h2,
-.network-graph-wrap h2,
-.inference h2 {
+.network-graph-wrap h2 {
   margin: 0 0 0.7rem;
   font-family: var(--font-head);
 }
@@ -219,10 +221,7 @@ button:disabled {
   display: flex;
   gap: 0.7rem;
   flex-wrap: wrap;
-}
-
-.layer-controls label {
-  min-width: 8rem;
+  margin-bottom: 0.5rem;
 }
 
 .layer-buttons {
@@ -297,24 +296,36 @@ button:disabled {
   fill: #475569;
 }
 
-.inference {
-  display: flex;
-  gap: 0.8rem;
-  align-items: end;
-  flex-wrap: wrap;
+.node-input-wrap {
+  overflow: visible;
 }
 
-.inference label {
-  min-width: 280px;
-  flex: 1;
+.node-input {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #93b2eb;
+  border-radius: 6px;
+  background: rgba(248, 251, 255, 0.97);
+  text-align: center;
+  padding: 0.08rem 0.2rem;
+  font-size: 11px;
 }
 
-.output {
-  margin: 0;
-  padding: 0.55rem 0.65rem;
-  border-radius: 10px;
-  background: rgba(0, 109, 119, 0.08);
-  min-width: 220px;
+.node-input::-webkit-outer-spin-button,
+.node-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0; /* <-- Apparently some margin are still there even though it's hidden */
+}
+
+.node-input[type="number"] {
+  appearance: textfield; /* Safari, Chrome, Edge */
+  -moz-appearance: textfield; /* Firefox */
+}
+
+.node-output {
+  font-size: 10px;
+  fill: #0f766e;
+  font-weight: 600;
 }
 
 .status {
@@ -402,17 +413,6 @@ button:disabled {
 
   .layer-buttons button {
     flex: 1;
-  }
-
-  .inference {
-    display: grid;
-    gap: 0.65rem;
-  }
-
-  .inference label,
-  .output {
-    min-width: 0;
-    width: 100%;
   }
 }
 
