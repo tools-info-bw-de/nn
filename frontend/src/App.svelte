@@ -1184,7 +1184,9 @@
     const plotHeight = height - padTop - padBottom;
 
     const yMin = 0;
-    const yMax = Math.max(1, history.length > 0 ? Math.max(...history) : 0);
+    const historyMax = history.length > 0 ? Math.max(...history) : 0;
+    const targetHeightRatio = 0.85;
+    const yMax = historyMax > 0 ? historyMax / targetHeightRatio : 1;
     const yRange = yMax - yMin || 1;
 
     const xMinEpoch = 1;
@@ -1210,6 +1212,13 @@
       };
     });
 
+    // Top tick is intentionally hidden to keep some headroom and a cleaner axis top.
+    const visibleYTicks = yTicks.slice(0, -1);
+    // Keep axis top aligned with the highest plotted value, so the line never rises above the axis.
+    // If no values exist yet, use the same headroom profile as regular data so the axis stays visible.
+    const defaultAxisTopValue = yMin + (yMax - yMin) * targetHeightRatio;
+    const yAxisTop = toY(historyMax > 0 ? historyMax : defaultAxisTopValue);
+
     const desiredXTicks = 6;
     const xTicks = [];
     const step = Math.max(
@@ -1234,7 +1243,8 @@
       padBottom,
       plotWidth,
       plotHeight,
-      yTicks,
+      yTicks: visibleYTicks,
+      yAxisTop,
       xTicks,
       linePoints,
       xAxisY: padTop + plotHeight,
@@ -1252,13 +1262,13 @@
       await requireApi();
       await createStateForTab(activeTabId);
       status = "Bereit. Du kannst jetzt pro Tab ein separates Netz bearbeiten.";
-    });
 
-    return () => {
-      window.removeEventListener("mousemove", onGlobalMouseMove);
-      window.removeEventListener("mouseup", onGlobalMouseUp);
-      disposeWorker();
-    };
+      return () => {
+        window.removeEventListener("mousemove", onGlobalMouseMove);
+        window.removeEventListener("mouseup", onGlobalMouseUp);
+        disposeWorker();
+      };
+    });
   });
 </script>
 
@@ -1420,7 +1430,7 @@
         <line
           class="loss-axis"
           x1={lossChart.yAxisX}
-          y1={lossChart.padTop}
+          y1={lossChart.yAxisTop}
           x2={lossChart.yAxisX}
           y2={lossChart.xAxisY}
         ></line>
@@ -1478,8 +1488,8 @@
         >
           Epoche
         </text>
-        <text class="loss-axis-label" x="14" y={lossChart.padTop - 5}
-          >Fehlerfunktion</text
+        <text class="loss-axis-label" x="55" y={lossChart.yAxisTop - 15}
+          >Fehlerwert</text
         >
       </svg>
     </div>
