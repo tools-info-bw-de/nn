@@ -61,6 +61,17 @@ body {
   padding: 0.85rem;
 }
 
+.tabs-header {
+  padding-top: 0rem !important;
+  padding-bottom: 0rem !important;
+}
+
+.tab-row > div,
+.tab-row > button {
+  margin-top: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
 .tab-row {
   display: flex;
   gap: 0.45rem;
@@ -105,6 +116,9 @@ body {
   width: 1.8rem;
   height: 1.8rem;
   border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tab-edit:hover,
@@ -124,7 +138,8 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
-  padding: 0.28rem 0.45rem;
+  /* padding: 0.28rem 0.45rem; */
+  padding: 0.1rem 0.45rem;
   font: inherit;
 }
 
@@ -176,18 +191,19 @@ button {
   color: #f8fffe;
   font-weight: 500;
   cursor: pointer;
-  transition:
-    transform 120ms ease,
-    filter 120ms ease;
 }
 
-button:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.04);
+.btn-hover {
+  transition: 200ms ease;
+}
+
+.btn-hover:hover {
+  box-shadow: 0 4px 10px rgba(0, 109, 119, 0.4);
+  filter: brightness(1.2);
 }
 
 button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.7;
   transform: none;
 }

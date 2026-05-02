@@ -487,6 +487,16 @@
   function beginRename(tab) {
     renamingTabId = tab.id;
     renameDraft = tab.name;
+
+    // focus input
+    setTimeout(() => {
+      const input = document.querySelector(`.tab-pill.active .rename-input`);
+      console.log(input);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 0);
   }
 
   function finishRename() {
@@ -740,30 +750,22 @@
                 }}
               />
             {:else}
-              <span
-                role="button"
-                tabindex="0"
-                on:click|stopPropagation={() => beginRename(tab)}
-                on:keydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    beginRename(tab);
-                  }
-                }}
-              >
+              <span role="button" tabindex="0">
                 {tab.name}
               </span>
             {/if}
           </button>
-          <button class="tab-edit" on:click={() => beginRename(tab)}>✎</button>
+          <button class="tab-edit btn-hover" on:click={() => beginRename(tab)}
+            >✎</button
+          >
           <button
-            class="tab-close"
+            class="tab-close btn-hover"
             on:click={() => closeTab(tab.id)}
             disabled={tabs.length === 1}>×</button
           >
         </div>
       {/each}
-      <button class="tab-add" on:click={addTab}>+ Tab</button>
+      <button class="tab-add btn-hover" on:click={addTab}>+ Netz</button>
     </div>
   </header>
 
@@ -784,15 +786,17 @@
       Lernrate
       <input
         type="number"
-        min="0.000001"
-        step="0.001"
+        min="0.001"
+        step="0.01"
         value={activeTab.learningRate}
         on:input={(e) => setActiveLearningRate(e.currentTarget.value)}
       />
     </label>
 
-    <button on:click={randomizeActiveState} disabled={busy || isTraining}
-      >Netz randomisieren</button
+    <button
+      class="btn-hover"
+      on:click={randomizeActiveState}
+      disabled={busy || isTraining}>Netz randomisieren</button
     >
 
     <label class="dataset-field">
@@ -805,11 +809,15 @@
       ></textarea>
     </label>
 
-    <button on:click={handleTrainingButtonClick} disabled={busy}
-      >{isTraining ? "Abbrechen" : "Training starten"}</button
+    <button
+      class="btn-hover"
+      on:click={handleTrainingButtonClick}
+      disabled={busy}>{isTraining ? "Abbrechen" : "Training starten"}</button
     >
-    <button on:click={() => (lossWindowOpen = true)} disabled={!hasLoss}
-      >Fehlerentwicklung</button
+    <button
+      class="btn-hover"
+      on:click={() => (lossWindowOpen = true)}
+      disabled={!hasLoss}>Fehlerentwicklung</button
     >
   </section>
 
@@ -834,10 +842,13 @@
         </label>
       {/each}
       <div class="layer-buttons">
-        <button on:click={addHiddenLayer} disabled={isTraining}
-          >Hidden Layer +</button
+        <button
+          class="btn-hover"
+          on:click={addHiddenLayer}
+          disabled={isTraining}>Hidden Layer +</button
         >
         <button
+          class="btn-hover"
           on:click={removeHiddenLayer}
           disabled={isTraining || activeTab.layers.length <= 2}
           >Hidden Layer -</button
