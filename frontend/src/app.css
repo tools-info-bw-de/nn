@@ -137,16 +137,48 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
-  /* padding: 0.28rem 0.45rem; */
   padding: 0.1rem 0.45rem;
   font: inherit;
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: 160px 160px 170px minmax(280px, 1fr) 170px 170px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.7rem;
   align-items: start;
+  justify-content: space-around;
+}
+
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  height: 100%;
+  justify-content: space-around;
+}
+
+hr {
+  width: 80%;
+}
+
+.toolbar-group > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.btn-is-training {
+  background: linear-gradient(135deg, #b42318, #7f1d1d);
+}
+
+.toolbar-group > button > img {
+  filter: invert(1);
+  width: 20px;
+  margin-right: auto;
+}
+
+.toolbar-group > button > span {
+  margin-right: auto;
 }
 
 label {
@@ -184,6 +216,16 @@ textarea {
 
 .dataset-field {
   min-width: 0;
+}
+
+.dataset-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dataset-controls span {
+  font-size: 0.8rem;
 }
 
 button {
@@ -366,6 +408,12 @@ button:disabled {
   margin-bottom: 0.7rem;
 }
 
+.modal-title {
+  font-family: var(--font-head);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
 .modal-drag-handle {
   margin: 0;
   font-family: var(--font-head);
@@ -377,6 +425,7 @@ button:disabled {
 
 .loss-chart {
   width: 100%;
+  min-height: 180px;
   border-radius: 10px;
   background: rgba(0, 109, 119, 0.06);
   border: 1px solid var(--line);
@@ -399,7 +448,7 @@ button:disabled {
 
 .loss-tick {
   fill: #334155;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .loss-tick-y {
@@ -412,7 +461,7 @@ button:disabled {
 
 .loss-axis-label {
   fill: #0f172a;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   text-anchor: middle;
 }
@@ -422,11 +471,90 @@ button:disabled {
   font-size: 0.82rem;
 }
 
-@media (max-width: 1180px) {
-  .toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.dataset-modal {
+  width: min(980px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+}
 
+.dataset-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
+
+.btn-file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.62rem 0.8rem;
+  background: linear-gradient(135deg, var(--accent), #0b8f9b);
+  color: #f8fffe;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dataset-grid-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.dataset-grid {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+.dataset-grid th,
+.dataset-grid td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem;
+  text-align: center;
+}
+
+.dataset-grid th {
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.dataset-grid td input {
+  width: 5.5rem;
+}
+
+.import-modal {
+  width: min(640px, 95vw);
+}
+
+.csv-first-line {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.55rem;
+  word-break: break-all;
+}
+
+.import-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
   .dataset-field {
     grid-column: 1 / -1;
   }
@@ -437,7 +565,6 @@ button:disabled {
     width: 96vw;
   }
 
-  .toolbar,
   .layer-controls {
     grid-template-columns: 1fr;
   }

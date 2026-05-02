@@ -33,10 +33,17 @@
   let lossWindowDragging = false;
   let lossWindowDragOffset = { x: 0, y: 0 };
 
+  let datasetModalOpen = false;
+  let datasetImportPromptOpen = false;
+  let pendingImportCsvText = "";
+  let pendingImportFirstLine = "";
+
   let isTraining = false;
   let stopTrainingRequested = false;
   let trainingTabId = "";
   let trainingTrainerId = "";
+  let trainingEpochOffset = 0;
+  let trainingLossHistoryBase = [];
   let trainingEpochsDone = 0;
   let trainingLastLoss = null;
   let trainingDeviation = null;
@@ -134,6 +141,7 @@
 
   function createTab(nr) {
     const layers = [2, 3, 1];
+    const defaultRows = JSON.parse(defaultDataset);
     return {
       id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: `Netz ${nr}`,
@@ -142,7 +150,7 @@
       learningRate: 0.1,
       epochs: 200,
       shuffle: true,
-      datasetText: defaultDataset,
+      datasetRows: defaultRows,
       inputNeuronValues: Array.from({ length: layers[0] }, (_, idx) =>
         String(defaultInputValues[idx] ?? 0),
       ),
@@ -216,6 +224,220 @@
       const parsed = Number(raw);
       return Number.isFinite(parsed) ? parsed.toFixed(4) : "-";
     });
+  }
+
+  function normalizeDatasetRows(tab) {
+    const inputCount = tab.layers[0] ?? 0;
+    const outputCount = tab.layers[tab.layers.length - 1] ?? 0;
+    const existing = Array.isArray(tab.datasetRows) ? tab.datasetRows : [];
+    const source = existing.length > 0 ? existing : [{ input: [], target: [] }];
+
+    tab.datasetRows = source.map((row) => {
+      const input = Array.from({ length: inputCount }, (_, idx) => {
+        const value = Number(row?.input?.[idx] ?? 0);
+        return Number.isFinite(value) ? value : 0;
+      });
+
+      const target = Array.from({ length: outputCount }, (_, idx) => {
+        const value = Number(row?.target?.[idx] ?? 0);
+        return Number.isFinite(value) ? value : 0;
+      });
+
+      return { input, target };
+    });
+  }
+
+  function cloneDatasetRows(rows) {
+    return rows.map((row) => ({
+      input: [...row.input],
+      target: [...row.target],
+    }));
+  }
+
+  function currentDatasetRows(tab) {
+    const rows = Array.isArray(tab.datasetRows) ? tab.datasetRows : [];
+    return cloneDatasetRows(rows);
+  }
+
+  function detectCsvDelimiter(lines) {
+    const first = lines[0] || "";
+    const semicolons = (first.match(/;/g) || []).length;
+    const commas = (first.match(/,/g) || []).length;
+    return semicolons > commas ? ";" : ",";
+  }
+
+  function splitCsvLine(line, delimiter) {
+    return line.split(delimiter).map((part) => part.trim());
+  }
+
+  function openDatasetModal() {
+    updateActiveTab((tab) => {
+      normalizeDatasetRows(tab);
+    });
+    datasetModalOpen = true;
+  }
+
+  function addDatasetRow() {
+    updateActiveTab((tab) => {
+      normalizeDatasetRows(tab);
+      tab.datasetRows.push({
+        input: Array.from({ length: tab.layers[0] }, () => 0),
+        target: Array.from(
+          { length: tab.layers[tab.layers.length - 1] },
+          () => 0,
+        ),
+      });
+    });
+  }
+
+  function removeDatasetRow(rowIndex) {
+    updateActiveTab((tab) => {
+      normalizeDatasetRows(tab);
+      if (tab.datasetRows.length <= 1) {
+        return;
+      }
+      tab.datasetRows.splice(rowIndex, 1);
+    });
+  }
+
+  function setDatasetRowInput(rowIndex, inputIndex, value) {
+    updateActiveTab((tab) => {
+      normalizeDatasetRows(tab);
+      const nextValue = Number(value);
+      tab.datasetRows[rowIndex].input[inputIndex] = Number.isFinite(nextValue)
+        ? nextValue
+        : 0;
+    });
+  }
+
+  function setDatasetRowOutput(rowIndex, outputIndex, value) {
+    updateActiveTab((tab) => {
+      normalizeDatasetRows(tab);
+      const nextValue = Number(value);
+      tab.datasetRows[rowIndex].target[outputIndex] = Number.isFinite(nextValue)
+        ? nextValue
+        : 0;
+    });
+  }
+
+  function exportDatasetCsv() {
+    const active = getActiveTab();
+    const rows = currentDatasetRows(active);
+    const inputCount = active.layers[0] ?? 0;
+    const outputCount = active.layers[active.layers.length - 1] ?? 0;
+
+    const header = [
+      ...Array.from({ length: outputCount }, (_, idx) => `output_${idx + 1}`),
+      ...Array.from({ length: inputCount }, (_, idx) => `input_${idx + 1}`),
+    ];
+
+    const lines = [header.join(",")];
+
+    for (const row of rows) {
+      const values = [
+        ...row.target.map((value) => String(value)),
+        ...row.input.map((value) => String(value)),
+      ];
+      lines.push(values.join(","));
+    }
+
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${active.name.replace(/\s+/g, "_")}_trainingsdaten.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onDatasetFileSelected(event) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    const text = await file.text();
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      throw new Error("CSV-Datei ist leer.");
+    }
+
+    pendingImportCsvText = text;
+    pendingImportFirstLine = lines[0];
+    datasetImportPromptOpen = true;
+  }
+
+  function closeDatasetImportPrompt() {
+    datasetImportPromptOpen = false;
+    pendingImportCsvText = "";
+    pendingImportFirstLine = "";
+  }
+
+  function importDatasetCsv(hasHeader) {
+    const active = getActiveTab();
+    const inputCount = active.layers[0] ?? 0;
+    const outputCount = active.layers[active.layers.length - 1] ?? 0;
+    const neededColumns = inputCount + outputCount;
+
+    const lines = pendingImportCsvText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      throw new Error("CSV-Datei ist leer.");
+    }
+
+    const delimiter = detectCsvDelimiter(lines);
+    const allRows = lines.map((line) => splitCsvLine(line, delimiter));
+    const dataRows = hasHeader ? allRows.slice(1) : allRows;
+
+    if (dataRows.length === 0) {
+      throw new Error("Keine Datenzeilen in CSV gefunden.");
+    }
+
+    const parsedRows = dataRows.map((row, rowIndex) => {
+      if (row.length < neededColumns) {
+        throw new Error(
+          `CSV-Zeile ${rowIndex + 1} hat zu wenige Spalten (erwartet ${neededColumns}).`,
+        );
+      }
+
+      const target = Array.from({ length: outputCount }, (_, idx) => {
+        const value = Number(row[idx]);
+        if (!Number.isFinite(value)) {
+          throw new Error(
+            `Ungueltiger Output-Wert in CSV-Zeile ${rowIndex + 1}.`,
+          );
+        }
+        return value;
+      });
+
+      const input = Array.from({ length: inputCount }, (_, idx) => {
+        const value = Number(row[outputCount + idx]);
+        if (!Number.isFinite(value)) {
+          throw new Error(
+            `Ungueltiger Input-Wert in CSV-Zeile ${rowIndex + 1}.`,
+          );
+        }
+        return value;
+      });
+
+      return { input, target };
+    });
+
+    updateActiveTab((tab) => {
+      tab.datasetRows = parsedRows;
+    });
+
+    closeDatasetImportPrompt();
   }
 
   function delay(ms) {
@@ -472,12 +694,89 @@
     return createStateForTab(active.id);
   }
 
+  function applyTrainingSnapshot(tabId, snapshot) {
+    if (!snapshot) {
+      return;
+    }
+
+    const combinedHistory = Array.isArray(snapshot.loss_history)
+      ? [...trainingLossHistoryBase, ...snapshot.loss_history]
+      : trainingLossHistoryBase;
+
+    updateTab(tabId, (next) => {
+      next.state = snapshot.state;
+      next.lossHistory = combinedHistory;
+    });
+
+    trainingEpochsDone =
+      trainingEpochOffset + Number(snapshot.epochs_done ?? trainingEpochsDone);
+    trainingLastLoss = snapshot.has_final_loss
+      ? Number(snapshot.final_loss)
+      : trainingLastLoss;
+    trainingDeviation = Number(snapshot.deviation ?? trainingDeviation ?? 0);
+
+    if (tabId === activeTabId) {
+      runLiveInferenceForTab(tabId, { ensureState: false });
+    }
+  }
+
+  async function finalizeTrainingSession(
+    tabId,
+    trainerId,
+    fallbackStatus = null,
+  ) {
+    if (!trainerId) {
+      return;
+    }
+
+    let snapshotApplied = false;
+
+    if (fallbackStatus) {
+      applyTrainingSnapshot(tabId, fallbackStatus);
+      snapshotApplied = true;
+    }
+
+    try {
+      await callWorker("nnTrainerStop", {
+        trainer_id: trainerId,
+      });
+    } catch {
+      // No-op: if trainer already stopped/disposed we still try status/dispose.
+    }
+
+    try {
+      const finalStatus = await callWorker("nnTrainerStatus", {
+        trainer_id: trainerId,
+      });
+
+      applyTrainingSnapshot(tabId, finalStatus);
+      snapshotApplied = true;
+    } catch {
+      // Best effort: if status fetch fails, keep fallback snapshot.
+    }
+
+    if (!snapshotApplied && tabId) {
+      // If we have neither fallback nor status, keep existing UI state as-is.
+    }
+
+    try {
+      await callWorker("nnTrainerDispose", {
+        trainer_id: trainerId,
+      });
+    } catch {
+      // No-op.
+    }
+  }
+
   async function trainActive() {
     if (isTraining) {
       return;
     }
 
     errorText = "";
+    let finalTabId = "";
+    let finalTrainerId = "";
+    let lastObservedStatus = null;
 
     try {
       await initWasm();
@@ -485,7 +784,8 @@
       await ensureStateForActiveTab();
 
       const active = getActiveTab();
-      const dataset = JSON.parse(active.datasetText);
+      normalizeDatasetRows(active);
+      const dataset = currentDatasetRows(active);
       if (!Array.isArray(dataset) || dataset.length === 0) {
         throw new Error(
           "Trainingsdaten muessen ein nicht-leeres JSON-Array sein.",
@@ -510,14 +810,22 @@
       stopTrainingRequested = false;
       trainingTabId = active.id;
       trainingTrainerId = trainerId;
-      trainingEpochsDone = 0;
-      trainingLastLoss = null;
+      finalTabId = active.id;
+      finalTrainerId = trainerId;
+      trainingLossHistoryBase = Array.isArray(active.lossHistory)
+        ? [...active.lossHistory]
+        : [];
+      trainingEpochOffset = trainingLossHistoryBase.length;
+      trainingEpochsDone = trainingEpochOffset;
+      trainingLastLoss =
+        trainingLossHistoryBase.length > 0
+          ? Number(trainingLossHistoryBase[trainingLossHistoryBase.length - 1])
+          : null;
       trainingDeviation = null;
       lossWindowOpen = true;
       status = `${active.name}: Training gestartet.`;
 
       updateTab(active.id, (next) => {
-        next.lossHistory = [];
         next.trainerId = trainerId;
       });
 
@@ -533,18 +841,21 @@
         const trainStatus = await callWorker("nnTrainerStatus", {
           trainer_id: trainingTrainerId,
         });
+        lastObservedStatus = trainStatus;
 
         const currentLoss = trainStatus.has_final_loss
           ? Number(trainStatus.final_loss)
           : null;
         const currentDeviation = Number(trainStatus.deviation ?? 0);
-        const currentEpochsDone = Number(trainStatus.epochs_done ?? 0);
+        const currentEpochsDone =
+          trainingEpochOffset + Number(trainStatus.epochs_done ?? 0);
+        const combinedHistory = Array.isArray(trainStatus.loss_history)
+          ? [...trainingLossHistoryBase, ...trainStatus.loss_history]
+          : trainingLossHistoryBase;
 
         updateTab(trainingTabId, (next) => {
           next.state = trainStatus.state;
-          next.lossHistory = Array.isArray(trainStatus.loss_history)
-            ? trainStatus.loss_history
-            : next.lossHistory;
+          next.lossHistory = combinedHistory;
         });
 
         if (trainingTabId === activeTabId) {
@@ -566,27 +877,6 @@
         await delay(50);
       }
 
-      if (trainingTrainerId) {
-        await callWorker("nnTrainerStop", {
-          trainer_id: trainingTrainerId,
-        });
-
-        const finalStatus = await callWorker("nnTrainerStatus", {
-          trainer_id: trainingTrainerId,
-        });
-
-        updateTab(trainingTabId, (next) => {
-          next.state = finalStatus.state;
-          next.lossHistory = Array.isArray(finalStatus.loss_history)
-            ? finalStatus.loss_history
-            : next.lossHistory;
-        });
-
-        await callWorker("nnTrainerDispose", {
-          trainer_id: trainingTrainerId,
-        });
-      }
-
       if (stopTrainingRequested) {
         const tab = tabs.find((entry) => entry.id === trainingTabId);
         status = `${tab?.name ?? "Netz"}: Training manuell abgebrochen.`;
@@ -597,10 +887,25 @@
     } catch (error) {
       errorText = error instanceof Error ? error.message : String(error);
     } finally {
+      await finalizeTrainingSession(
+        finalTabId || trainingTabId,
+        finalTrainerId || trainingTrainerId,
+        lastObservedStatus,
+      );
+
+      if (!stopTrainingRequested && trainingDeviation === 0) {
+        const tab = tabs.find(
+          (entry) => entry.id === (finalTabId || trainingTabId),
+        );
+        status = `${tab?.name ?? "Netz"}: Ziel erreicht (Abweichung 0).`;
+      }
+
       isTraining = false;
       stopTrainingRequested = false;
       trainingTrainerId = "";
       trainingTabId = "";
+      trainingEpochOffset = 0;
+      trainingLossHistoryBase = [];
     }
   }
 
@@ -699,6 +1004,7 @@
       tab.state = null;
       tab.lossHistory = [];
       normalizeTabNeuronIo(tab);
+      normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
         { length: tab.layers[tab.layers.length - 1] },
         () => "-",
@@ -712,6 +1018,7 @@
       tab.state = null;
       tab.lossHistory = [];
       normalizeTabNeuronIo(tab);
+      normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
         { length: tab.layers[tab.layers.length - 1] },
         () => "-",
@@ -728,16 +1035,11 @@
       tab.state = null;
       tab.lossHistory = [];
       normalizeTabNeuronIo(tab);
+      normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
         { length: tab.layers[tab.layers.length - 1] },
         () => "-",
       );
-    });
-  }
-
-  function setDatasetText(value) {
-    updateActiveTab((tab) => {
-      tab.datasetText = value;
     });
   }
 
@@ -1001,55 +1303,166 @@
   </header>
 
   <section class="toolbar">
-    <label>
-      Aktivierung
-      <select
-        value={activeTab.activation}
-        on:change={(e) => setActiveActivation(e.currentTarget.value)}
-      >
-        {#each availableActivations as act}
-          <option value={act}>{act}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="toolbar-group">
+      <label>
+        Aktivierung
+        <select
+          value={activeTab.activation}
+          on:change={(e) => setActiveActivation(e.currentTarget.value)}
+        >
+          {#each availableActivations as act}
+            <option value={act}>{act}</option>
+          {/each}
+        </select>
+      </label>
 
-    <label>
-      Lernrate
-      <input
-        type="number"
-        min="0.001"
-        step="0.001"
-        value={activeTab.learningRate}
-        on:input={(e) => setActiveLearningRate(e.currentTarget.value)}
-      />
-    </label>
+      <label>
+        Lernrate
+        <input
+          type="number"
+          min="0.001"
+          step="0.001"
+          value={activeTab.learningRate}
+          on:input={(e) => setActiveLearningRate(e.currentTarget.value)}
+        />
+      </label>
+    </div>
 
-    <button
-      class="btn-hover"
-      on:click={randomizeActiveState}
-      disabled={busy || isTraining}>Netz randomisieren</button
-    >
-
-    <label class="dataset-field">
-      Trainingsdaten (JSON)
-      <textarea
-        rows="6"
-        value={activeTab.datasetText}
+    <div class="toolbar-group">
+      <button
+        class="btn-hover"
+        on:click={openDatasetModal}
         disabled={isTraining}
-        on:input={(e) => setDatasetText(e.currentTarget.value)}
-      ></textarea>
-    </label>
+      >
+        <img
+          src="/person-chalkboard-solid-full.svg"
+          alt=""
+          width="16"
+          height="16"
+        />
+        <span>Trainingsdaten</span>
+      </button>
+      <hr />
+      <button
+        class="btn-hover"
+        on:click={randomizeActiveState}
+        disabled={busy || isTraining}
+      >
+        <img src="/shuffle-solid-full.svg" alt="" width="16" height="16" />
+        <span>Netz randomisieren</span>
+      </button>
 
-    <button
-      class="btn-hover"
-      on:click={handleTrainingButtonClick}
-      disabled={busy}>{isTraining ? "Abbrechen" : "Training starten"}</button
-    >
-    <button
-      class="btn-hover"
-      on:click={() => (lossWindowOpen = true)}
-      disabled={!hasLoss}>Fehlerentwicklung</button
-    >
+      <button
+        class="btn-hover {isTraining ? 'btn-is-training' : ''}"
+        on:click={handleTrainingButtonClick}
+        disabled={busy}
+      >
+        {#if isTraining}
+          <img src="/stop-solid-full.svg" alt="" width="16" height="16" />
+          <span>Abbrechen</span>
+        {:else}
+          <img src="/play-solid-full.svg" alt="" width="16" height="16" />
+          <span>Training starten</span>
+        {/if}</button
+      >
+    </div>
+
+    <p class="loss-meta">
+      {isTraining ? "Training laeuft." : "Training beendet."}<br />
+      Epochen: {trainingEpochsDone}<br />
+      Max:
+      {#if hasLoss}
+        {Math.max(...activeTab.lossHistory).toFixed(6)}
+      {:else}
+        ---
+      {/if}<br />
+      Min:
+      {#if hasLoss}
+        {Math.min(...activeTab.lossHistory).toFixed(6)}
+      {:else}
+        ---
+      {/if}<br />
+      Letzt:
+      {#if hasLoss}
+        {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(6)}
+      {:else}
+        ---
+      {/if}
+    </p>
+
+    <div>
+      <svg
+        viewBox={`0 0 ${lossChart.width} ${lossChart.height}`}
+        class="loss-chart"
+        role="img"
+        aria-label="Loss Verlauf mit Skalen"
+      >
+        <line
+          class="loss-axis"
+          x1={lossChart.yAxisX}
+          y1={lossChart.padTop}
+          x2={lossChart.yAxisX}
+          y2={lossChart.xAxisY}
+        ></line>
+        <line
+          class="loss-axis"
+          x1={lossChart.yAxisX}
+          y1={lossChart.xAxisY}
+          x2={lossChart.yAxisX + lossChart.plotWidth}
+          y2={lossChart.xAxisY}
+        ></line>
+
+        {#each lossChart.yTicks as tick}
+          <line
+            class="loss-grid"
+            x1={lossChart.yAxisX}
+            y1={tick.y}
+            x2={lossChart.yAxisX + lossChart.plotWidth}
+            y2={tick.y}
+          ></line>
+          <text
+            class="loss-tick loss-tick-y"
+            x={lossChart.yAxisX - 6}
+            y={tick.y + 3}>{tick.label}</text
+          >
+        {/each}
+
+        {#each lossChart.xTicks as tick}
+          <line
+            class="loss-tick-mark"
+            x1={tick.x}
+            y1={lossChart.xAxisY}
+            x2={tick.x}
+            y2={lossChart.xAxisY + 4}
+          ></line>
+          <text
+            class="loss-tick loss-tick-x"
+            x={tick.x}
+            y={lossChart.xAxisY + 16}>{tick.epoch}</text
+          >
+        {/each}
+
+        {#if lossChart.hasLine}
+          <polyline
+            points={lossChart.linePoints}
+            fill="none"
+            stroke="var(--accent)"
+            stroke-width="2.5"
+          ></polyline>
+        {/if}
+
+        <text
+          class="loss-axis-label"
+          x={lossChart.yAxisX + lossChart.plotWidth / 2}
+          y={lossChart.height - 4}
+        >
+          Epoche
+        </text>
+        <text class="loss-axis-label" x="14" y={lossChart.padTop - 5}
+          >Fehler</text
+        >
+      </svg>
+    </div>
   </section>
 
   <section class="network-graph-wrap">
@@ -1191,126 +1604,119 @@
     {/if}
   </footer>
 
-  {#if lossWindowOpen}
+  {#if datasetModalOpen}
     <div class="modal-backdrop">
-      <div
-        class="modal-window"
-        role="dialog"
-        aria-modal="true"
-        style={`left: ${lossWindowPosition.x}px; top: ${lossWindowPosition.y}px;`}
-      >
-        <div
-          class="modal-head modal-drag-handle"
-          role="button"
-          tabindex="0"
-          on:mousedown={startLossWindowDrag}
-          on:keydown={(e) => {
-            if (e.key === "Escape") {
-              lossWindowOpen = false;
-            }
-          }}
-        >
-          <div class="">Fehlerentwicklung pro Epoche</div>
-          <button on:click={() => (lossWindowOpen = false)}>X</button>
+      <div class="modal-window dataset-modal" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <div class="modal-title">Trainingsdaten bearbeiten</div>
+          <button on:click={() => (datasetModalOpen = false)}>X</button>
         </div>
 
-        {#if isTraining}
-          <p class="loss-meta">
-            Training laeuft. Epochen: {trainingEpochsDone} | Letzter Loss: {trainingLastLoss ===
-            null
-              ? "-"
-              : trainingLastLoss.toFixed(6)} | Aktuelle Abweichung: {trainingDeviation ===
-            null
-              ? "-"
-              : trainingDeviation.toFixed(6)}
-          </p>
-        {/if}
-
-        <svg
-          viewBox={`0 0 ${lossChart.width} ${lossChart.height}`}
-          class="loss-chart"
-          role="img"
-          aria-label="Loss Verlauf mit Skalen"
-        >
-          <line
-            class="loss-axis"
-            x1={lossChart.yAxisX}
-            y1={lossChart.padTop}
-            x2={lossChart.yAxisX}
-            y2={lossChart.xAxisY}
-          ></line>
-          <line
-            class="loss-axis"
-            x1={lossChart.yAxisX}
-            y1={lossChart.xAxisY}
-            x2={lossChart.yAxisX + lossChart.plotWidth}
-            y2={lossChart.xAxisY}
-          ></line>
-
-          {#each lossChart.yTicks as tick}
-            <line
-              class="loss-grid"
-              x1={lossChart.yAxisX}
-              y1={tick.y}
-              x2={lossChart.yAxisX + lossChart.plotWidth}
-              y2={tick.y}
-            ></line>
-            <text
-              class="loss-tick loss-tick-y"
-              x={lossChart.yAxisX - 6}
-              y={tick.y + 3}>{tick.label}</text
-            >
-          {/each}
-
-          {#each lossChart.xTicks as tick}
-            <line
-              class="loss-tick-mark"
-              x1={tick.x}
-              y1={lossChart.xAxisY}
-              x2={tick.x}
-              y2={lossChart.xAxisY + 4}
-            ></line>
-            <text
-              class="loss-tick loss-tick-x"
-              x={tick.x}
-              y={lossChart.xAxisY + 16}>{tick.epoch}</text
-            >
-          {/each}
-
-          {#if lossChart.hasLine}
-            <polyline
-              points={lossChart.linePoints}
-              fill="none"
-              stroke="var(--accent)"
-              stroke-width="2.5"
-            ></polyline>
-          {/if}
-
-          <text
-            class="loss-axis-label"
-            x={lossChart.yAxisX + lossChart.plotWidth / 2}
-            y={lossChart.height - 4}
+        <div class="dataset-actions">
+          <button class="btn-hover" on:click={addDatasetRow}>+ Zeile</button>
+          <button class="btn-hover" on:click={exportDatasetCsv}
+            >CSV speichern</button
           >
-            Epoche
-          </text>
-          <text class="loss-axis-label" x="14" y={lossChart.padTop + 2}
-            >Loss</text
-          >
-        </svg>
+          <label class="btn-file btn-hover">
+            CSV laden
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              on:change={onDatasetFileSelected}
+            />
+          </label>
+        </div>
 
-        {#if hasLoss}
-          <p class="loss-meta">
-            Min: {Math.min(...activeTab.lossHistory).toFixed(6)} | Max: {Math.max(
-              ...activeTab.lossHistory,
-            ).toFixed(6)} | Letzt: {activeTab.lossHistory[
-              activeTab.lossHistory.length - 1
-            ].toFixed(6)}
-          </p>
-        {:else}
-          <p class="loss-meta">
-            Kein Verlauf vorhanden. Starte zuerst ein Training.
-          </p>
-        {/if}
+        <div class="dataset-grid-wrap">
+          <table class="dataset-grid">
+            <thead>
+              <tr>
+                <th colspan={activeTab.layers[0]}>Inputs</th>
+                <th colspan={activeTab.layers[activeTab.layers.length - 1]}
+                  >Outputs</th
+                >
+                <th>Aktion</th>
+              </tr>
+              <tr>
+                {#each Array.from({ length: activeTab.layers[0] }, (_, idx) => idx) as idx}
+                  <th>I{idx + 1}</th>
+                {/each}
+                {#each Array.from({ length: activeTab.layers[activeTab.layers.length - 1] }, (_, idx) => idx) as idx}
+                  <th>O{idx + 1}</th>
+                {/each}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each activeTab.datasetRows as row, rowIndex}
+                <tr>
+                  {#each row.input as value, inputIndex}
+                    <td>
+                      <input
+                        type="number"
+                        {value}
+                        on:input={(e) =>
+                          setDatasetRowInput(
+                            rowIndex,
+                            inputIndex,
+                            e.currentTarget.value,
+                          )}
+                      />
+                    </td>
+                  {/each}
+                  {#each row.target as value, outputIndex}
+                    <td>
+                      <input
+                        type="number"
+                        {value}
+                        on:input={(e) =>
+                          setDatasetRowOutput(
+                            rowIndex,
+                            outputIndex,
+                            e.currentTarget.value,
+                          )}
+                      />
+                    </td>
+                  {/each}
+                  <td>
+                    <button
+                      class="btn-hover"
+                      on:click={() => removeDatasetRow(rowIndex)}
+                      disabled={activeTab.datasetRows.length <= 1}
+                      >Loeschen</button
+                    >
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if datasetImportPromptOpen}
+    <div class="modal-backdrop">
+      <div class="modal-window import-modal" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <div class="modal-title">CSV-Import</div>
+          <button on:click={closeDatasetImportPrompt}>X</button>
+        </div>
+
+        <p>Hat die CSV einen Header?</p>
+        <p class="csv-first-line">Erste Zeile: {pendingImportFirstLine}</p>
+
+        <div class="import-actions">
+          <button class="btn-hover" on:click={() => importDatasetCsv(true)}
+            >Mit Header importieren</button
+          >
+          <button class="btn-hover" on:click={() => importDatasetCsv(false)}
+            >Ohne Header importieren</button
+          >
+          <button class="btn-hover" on:click={closeDatasetImportPrompt}
+            >Abbrechen</button
+          >
+        </div>
       </div>
     </div>
   {/if}
