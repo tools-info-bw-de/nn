@@ -47,6 +47,7 @@
   let trainingEpochsDone = 0;
   let trainingLastLoss = null;
   let trainingDeviation = null;
+  let highlightedConnectionId = "";
   let liveInferenceRunId = 0;
   let nnWorker = null;
   let nnWorkerReadyPromise = null;
@@ -541,6 +542,7 @@
 
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
     const connections = [];
+    const weightLabelTargetRatio = 0.7;
 
     for (let layer = 1; layer < layers.length; layer += 1) {
       for (let to = 0; to < layers[layer]; to += 1) {
@@ -560,6 +562,10 @@
             y1: fromNode.y,
             x2: toNode.x,
             y2: toNode.y,
+            labelX:
+              fromNode.x + (toNode.x - fromNode.x) * weightLabelTargetRatio,
+            labelY:
+              fromNode.y + (toNode.y - fromNode.y) * weightLabelTargetRatio,
             weight,
           });
         }
@@ -1068,6 +1074,8 @@
 
   function editWeight(conn) {
     return withBusy(async () => {
+      highlightedConnectionId = conn.id;
+
       if (isTraining) {
         throw new Error(
           "Gewichte koennen waehrend des Trainings nicht manuell geaendert werden.",
@@ -1136,6 +1144,26 @@
   $: activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
   $: stateForDraw = activeTab?.state || buildPlaceholderState(activeTab);
   $: graph = geometryFromState(stateForDraw);
+  $: orderedConnections = (() => {
+    if (!graph?.connections?.length) {
+      return [];
+    }
+
+    const selected = graph.connections.find(
+      (conn) => conn.id === highlightedConnectionId,
+    );
+
+    if (!selected) {
+      return graph.connections;
+    }
+
+    return [
+      ...graph.connections.filter(
+        (conn) => conn.id !== highlightedConnectionId,
+      ),
+      selected,
+    ];
+  })();
   $: hasLoss = activeTab?.lossHistory?.length > 0;
 
   function startLossWindowDrag(event) {
@@ -1540,8 +1568,35 @@
         role="img"
         aria-label="Netzwerkvisualisierung"
       >
-        {#each graph.connections as conn}
+        {#each orderedConnections as conn (conn.id)}
           <g>
+            <line
+              class="edge-hit"
+              x1={conn.x1}
+              y1={conn.y1}
+              x2={conn.x2}
+              y2={conn.y2}
+              role="button"
+              tabindex="0"
+              on:pointerenter={() => {
+                highlightedConnectionId = conn.id;
+              }}
+              on:pointerleave={() => {
+                if (highlightedConnectionId === conn.id) {
+                  highlightedConnectionId = "";
+                }
+              }}
+              on:focus={() => {
+                highlightedConnectionId = conn.id;
+              }}
+              on:click={() => editWeight(conn)}
+              on:keydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  editWeight(conn);
+                }
+              }}
+            ></line>
             <line
               class={`edge ${conn.weight >= 0 ? "pos" : "neg"}`}
               x1={conn.x1}
@@ -1551,9 +1606,9 @@
               stroke-width={Math.min(3, 0.8 + Math.abs(conn.weight) * 0.45)}
             ></line>
             <text
-              class="edge-value"
-              x={(conn.x1 + conn.x2) / 2}
-              y={(conn.y1 + conn.y2) / 2}
+              class={`edge-value ${highlightedConnectionId === conn.id ? "edge-value-active" : ""}`}
+              x={conn.labelX}
+              y={conn.labelY}
               role="button"
               tabindex="0"
               on:click={() => editWeight(conn)}
