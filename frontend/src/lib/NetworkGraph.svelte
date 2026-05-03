@@ -134,6 +134,14 @@
 </svg>
 
 <style>
+  .network-graph {
+    width: 100%;
+    min-width: 700px;
+    border-radius: 12px;
+    background: rgba(250, 250, 250, 0.78);
+    border: 1px dashed var(--line);
+  }
+
   .edge {
     opacity: 0.65;
     pointer-events: none;

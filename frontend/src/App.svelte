@@ -1660,6 +1660,8 @@
 </main>
 
 <style>
+  @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
   .layer-buttons {
     display: flex;
     align-items: center;
@@ -1688,5 +1690,440 @@
   .layer-buttons > button:last-child {
     border-top-right-radius: 10px;
     border-bottom-right-radius: 10px;
+  }
+
+  :root {
+    --bg: #f2efe7;
+    --ink: #1f2937;
+    --surface: rgba(255, 255, 255, 0.76);
+    --line: #d2c9b9;
+    --accent: #006d77;
+    --accent-2: #e76f51;
+    --ok: #2a9d8f;
+    --danger: #b42318;
+
+    --font-head: "Chakra Petch", sans-serif;
+    --font-ui: "IBM Plex Mono", monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  :global(html),
+  :global(body) {
+    margin: 0;
+    min-height: 100%;
+    color: var(--ink);
+    background: radial-gradient(
+        circle at 12% 12%,
+        rgba(0, 109, 119, 0.2),
+        transparent 26%
+      ),
+      radial-gradient(
+        circle at 88% 16%,
+        rgba(231, 111, 81, 0.2),
+        transparent 28%
+      ),
+      linear-gradient(160deg, #f7f4ec 0%, #ebe5d8 64%, #f5f1e8 100%);
+    font-family: var(--font-ui);
+  }
+
+  :global(#app) {
+    min-height: 100svh;
+  }
+
+  .app-shell {
+    width: min(1280px, 95vw);
+    margin: 0 auto;
+    padding: 1.4rem 0 2rem;
+    display: grid;
+    gap: 1rem;
+    animation: rise-in 450ms ease-out;
+  }
+
+  .tabs-header,
+  .toolbar,
+  .network-controls,
+  .network-graph-wrap,
+  .status {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+    padding: 0.85rem;
+  }
+
+  .tabs-header {
+    padding-top: 0rem !important;
+    padding-bottom: 0rem !important;
+  }
+
+  .tab-row > div,
+  .tab-row > button {
+    margin-top: 0.85rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .tab-row {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+  }
+
+  .tab-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    min-height: 2.1rem;
+  }
+
+  .tab-pill.active {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(0, 109, 119, 0.25);
+  }
+
+  .tab-open,
+  .tab-edit,
+  .tab-close,
+  .tab-add {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+
+  .tab-open {
+    padding: 0.35rem 0.75rem;
+    white-space: nowrap;
+  }
+
+  .tab-edit,
+  .tab-close {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tab-edit:hover,
+  .tab-close:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .tab-add {
+    margin-left: 0.3rem;
+    border: 1px dashed var(--line);
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+  }
+
+  .rename-input {
+    width: 8rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0.1rem 0.45rem;
+    font: inherit;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    align-items: start;
+    justify-content: space-around;
+  }
+
+  .toolbar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    height: 100%;
+    justify-content: space-around;
+  }
+
+  hr {
+    width: 80%;
+  }
+
+  .toolbar-group > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .btn-is-training {
+    background: linear-gradient(135deg, #b42318, #7f1d1d);
+  }
+
+  .toolbar-group > button > img {
+    filter: invert(1);
+    width: 20px;
+    margin-right: auto;
+  }
+
+  .toolbar-group > button > span {
+    margin-right: auto;
+  }
+
+  label {
+    display: grid;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+  }
+
+  input,
+  select,
+  button {
+    font: inherit;
+  }
+
+  :global(input),
+  :global(select) {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--ink);
+    padding: 0.5rem 0.55rem;
+  }
+
+  .layer-controls input {
+    width: 6rem;
+  }
+
+  :global(button) {
+    border: 0;
+    border-radius: 10px;
+    padding: 0.62rem 0.8rem;
+    background: linear-gradient(135deg, var(--accent), #0b8f9b);
+    color: #f8fffe;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  :global(.btn-hover) {
+    transition: 200ms ease;
+  }
+
+  :global(.btn-hover:hover) {
+    box-shadow: 0 4px 10px rgba(0, 109, 119, 0.4);
+    filter: brightness(1.2);
+  }
+
+  :global(button:disabled) {
+    cursor: not-allowed;
+    opacity: 0.7;
+    transform: none;
+  }
+
+  .network-graph-wrap h2 {
+    margin: 0 0 0.7rem;
+    font-family: var(--font-head);
+  }
+
+  .layer-controls {
+    display: flex;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+    align-items: center;
+  }
+
+  .graph-scroll {
+    overflow-x: hidden;
+  }
+
+  .hint {
+    margin: 0 0 0.7rem;
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+
+  .status {
+    font-size: 0.84rem;
+  }
+
+  .status p {
+    margin: 0;
+  }
+
+  .error {
+    margin-top: 0.4rem;
+    color: var(--danger);
+  }
+
+  :global(.modal-backdrop) {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.25);
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  :global(.modal-window) {
+    position: fixed;
+    width: min(760px, 100%);
+    background: #fbfaf5;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.9rem;
+    pointer-events: auto;
+  }
+
+  :global(.modal-head) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.7rem;
+  }
+
+  :global(.modal-title) {
+    font-family: var(--font-head);
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  :global(.modal-drag-handle) {
+    margin: 0;
+    font-family: var(--font-head);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: move;
+    user-select: none;
+  }
+
+  .loader {
+    width: 16px;
+    height: 16px;
+    border: 3px solid #000000;
+    border-bottom-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    box-sizing: border-box;
+    animation: rotation 1s linear infinite;
+  }
+
+  @keyframes rotation {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .loss-meta {
+    margin: 0.6rem 0 0;
+    font-size: 0.82rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .loss-meta > .header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .loss-meta > .header > .training {
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+  }
+
+  .loss-meta .last-loss {
+    font-weight: 600;
+  }
+
+  .values h4 {
+    margin: 0;
+    text-decoration: underline;
+  }
+
+  .resizable-window {
+    position: fixed;
+  }
+
+  :global(.btn-file) {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 10px;
+    padding: 0.62rem 0.8rem;
+    background: linear-gradient(135deg, var(--accent), #0b8f9b);
+    color: #f8fffe;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  :global(.btn-file input) {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .import-modal {
+    width: min(640px, 95vw);
+  }
+
+  .csv-first-line {
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.55rem;
+    word-break: break-all;
+  }
+
+  .import-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 760px) {
+    .app-shell {
+      width: 96vw;
+    }
+
+    .layer-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .layer-buttons {
+      width: 100%;
+    }
+
+    .layer-buttons button {
+      flex: 1;
+    }
+  }
+
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>

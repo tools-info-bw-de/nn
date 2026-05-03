@@ -116,3 +116,80 @@
     </table>
   </div>
 </div>
+
+<style>
+  .dataset-modal {
+    min-width: 540px;
+    min-height: 320px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-head {
+    flex: 0 0 auto;
+  }
+
+  .outputs-header {
+    border-left: 1px solid var(--line);
+  }
+
+  .dataset-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.7rem;
+    flex: 0 0 auto;
+  }
+
+  .dataset-grid-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.65);
+  }
+
+  .dataset-grid {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 700px;
+  }
+
+  .dataset-grid th,
+  .dataset-grid td {
+    border-bottom: 1px solid var(--line);
+    padding: 0.35rem;
+    text-align: center;
+  }
+
+  .dataset-grid th {
+    font-size: 0.78rem;
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  .dataset-grid td input {
+    width: 5.5rem;
+  }
+
+  .resize-handle {
+    position: absolute;
+    right: 0px;
+    bottom: 0px;
+    z-index: 2;
+    border: 0;
+    border-radius: 5px;
+    margin: 0;
+    padding: 0;
+    background: lightgrey;
+  }
+
+  .resize-se {
+    width: 18px;
+    height: 18px;
+    cursor: nwse-resize;
+  }
+</style>
