@@ -19,8 +19,6 @@
 
   let wasmReady = false;
   let busy = $state(false);
-  let status = $state("Initialisiere...");
-  let errorText = $state("");
   let activationMenuOpen = $state(false);
 
   let availableActivations = $state(["binary", "logistic", "relu"]);
@@ -63,7 +61,6 @@
   let trainingTrainerId = "";
   let trainingEpochOffset = 0;
   let trainingLossHistoryBase = [];
-  let trainingEpochsDone = $state(0);
   let trainingLastLoss = null;
   let trainingDeviation = null;
   let highlightedConnectionId = $state("");
@@ -170,7 +167,7 @@
       layers,
       activation: "logistic",
       learningRate: 0.1,
-      epochs: 200,
+      epochs: 0,
       shuffle: true,
       datasetRows: defaultRows,
       inputNeuronValues: Array.from({ length: layers[0] }, (_, idx) =>
@@ -593,7 +590,7 @@
       version: 1,
       exported_at: new Date().toISOString(),
       name: active.name,
-      training_epochs: trainingEpochsDone,
+      training_epochs: activeTab.epochs,
       network: {
         layers: clone(active.layers),
         activation: active.activation,
@@ -692,7 +689,11 @@
 
       updateActiveTab((tab) => {
         tab.name = String(parsed?.name ?? tab.name);
-        tab.traininge;
+        const importedEpochs = Number(parsed?.training_epochs);
+        tab.epochs =
+          Number.isFinite(importedEpochs) && importedEpochs >= 0
+            ? Math.floor(importedEpochs)
+            : Number(tab.epochs) || 0;
         tab.layers = layers;
         tab.activation = String(
           network.activation ?? tab.activation ?? "logistic",
@@ -714,10 +715,8 @@
 
       activationMenuOpen = false;
       await runLiveInferenceForTab(activeTabId, { ensureState: false });
-      status = `${getActiveTab().name}: Netz importiert.`;
-      errorText = "";
     } catch (error) {
-      errorText = error instanceof Error ? error.message : String(error);
+      console.log(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -752,10 +751,9 @@
       pendingImportDelimiter = delimiter;
       datasetImportStep = "ask-second-line";
       datasetImportPromptOpen = true;
-      errorText = "";
     } catch (error) {
       closeDatasetImportPrompt();
-      errorText = error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -776,7 +774,6 @@
         );
         applyImportedDataset(parsedRows, null, false);
         closeDatasetImportPrompt();
-        status = "Trainingsdaten importiert.";
         return;
       }
 
@@ -812,15 +809,13 @@
         );
         applyImportedDataset(parsedRows, importedNames, true);
         closeDatasetImportPrompt();
-        status = "Trainingsdaten importiert.";
         return;
       }
 
       datasetImportStep = "ask-adopt-names";
-      errorText = "";
     } catch (error) {
       closeDatasetImportPrompt();
-      errorText = error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -848,11 +843,9 @@
 
       applyImportedDataset(parsedRows, importedNames, adoptNames);
       closeDatasetImportPrompt();
-      status = "Trainingsdaten importiert.";
-      errorText = "";
     } catch (error) {
       closeDatasetImportPrompt();
-      errorText = error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -888,33 +881,6 @@
       weights,
       biases,
     };
-  }
-
-  function currentState() {
-    const tab = getActiveTab();
-    return tab.state ? tab.state : buildPlaceholderState(tab);
-  }
-
-  async function computeMaxDeviation(state, dataset) {
-    let maxDeviation = 0;
-
-    for (const sample of dataset) {
-      const response = await callWorker("nnForward", {
-        state,
-        input: sample.input,
-      });
-
-      for (let i = 0; i < sample.target.length; i += 1) {
-        const outputValue = Number(response.output?.[i] ?? 0);
-        const expectedValue = Number(sample.target[i]);
-        const diff = Math.abs(outputValue - expectedValue);
-        if (diff > maxDeviation) {
-          maxDeviation = diff;
-        }
-      }
-    }
-
-    return maxDeviation;
   }
 
   function geometryFromState(state) {
@@ -1009,12 +975,11 @@
   }
 
   async function withBusy(task) {
-    errorText = "";
     busy = true;
     try {
       await task();
     } catch (error) {
-      errorText = error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
     } finally {
       busy = false;
     }
@@ -1094,7 +1059,7 @@
       });
     } catch (error) {
       if (tabId === activeTabId) {
-        errorText = error instanceof Error ? error.message : String(error);
+        console.error(error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -1103,7 +1068,9 @@
     return withBusy(async () => {
       const active = getActiveTab();
       await createStateForTab(active.id);
-      status = `${active.name}: Gewichte neu randomisiert.`;
+      updateTab(active.id, (next) => {
+        next.epochs = 0;
+      });
     });
   }
 
@@ -1129,8 +1096,8 @@
       next.lossHistory = combinedHistory;
     });
 
-    trainingEpochsDone =
-      trainingEpochOffset + Number(snapshot.epochs_done ?? trainingEpochsDone);
+    activeTab.epochs =
+      trainingEpochOffset + Number(snapshot.epochs_done ?? activeTab.epochs);
     trainingLastLoss = snapshot.has_final_loss
       ? Number(snapshot.final_loss)
       : trainingLastLoss;
@@ -1194,7 +1161,6 @@
       return;
     }
 
-    errorText = "";
     let finalTabId = "";
     let finalTrainerId = "";
     let lastObservedStatus = null;
@@ -1236,14 +1202,17 @@
       trainingLossHistoryBase = Array.isArray(active.lossHistory)
         ? [...active.lossHistory]
         : [];
-      trainingEpochOffset = trainingLossHistoryBase.length;
-      trainingEpochsDone = trainingEpochOffset;
+      const persistedEpochs = Number(active.epochs);
+      trainingEpochOffset =
+        Number.isFinite(persistedEpochs) && persistedEpochs >= 0
+          ? Math.floor(persistedEpochs)
+          : trainingLossHistoryBase.length;
+      activeTab.epochs = trainingEpochOffset;
       trainingLastLoss =
         trainingLossHistoryBase.length > 0
           ? Number(trainingLossHistoryBase[trainingLossHistoryBase.length - 1])
           : null;
       trainingDeviation = null;
-      status = `${active.name}: Training gestartet.`;
 
       updateTab(active.id, (next) => {
         next.trainerId = trainerId;
@@ -1254,7 +1223,6 @@
       while (!stopTrainingRequested) {
         const tab = tabs.find((entry) => entry.id === trainingTabId);
         if (!tab) {
-          status = "Training gestoppt: Trainings-Tab wurde geschlossen.";
           break;
         }
 
@@ -1282,12 +1250,12 @@
           runLiveInferenceForTab(trainingTabId, { ensureState: false });
         }
 
-        trainingEpochsDone = currentEpochsDone;
+        activeTab.epochs = currentEpochsDone;
         trainingLastLoss = currentLoss;
         trainingDeviation = currentDeviation;
 
         if (currentLoss !== null) {
-          status = `${tab.name}: Training Epoche ${trainingEpochsDone}, Loss ${currentLoss.toFixed(6)}, Abweichung ${currentDeviation.toFixed(6)}`;
+          status = `${tab.name}: Training Epoche ${activeTab.epochs}, Loss ${currentLoss.toFixed(6)}, Abweichung ${currentDeviation.toFixed(6)}`;
         }
 
         if (!trainStatus.running) {
@@ -1296,16 +1264,8 @@
 
         await delay(50);
       }
-
-      if (stopTrainingRequested) {
-        const tab = tabs.find((entry) => entry.id === trainingTabId);
-        status = `${tab?.name ?? "Netz"}: Training manuell abgebrochen.`;
-      } else if (trainingDeviation === 0) {
-        const tab = tabs.find((entry) => entry.id === trainingTabId);
-        status = `${tab?.name ?? "Netz"}: Ziel erreicht (Abweichung 0).`;
-      }
     } catch (error) {
-      errorText = error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
     } finally {
       await finalizeTrainingSession(
         finalTabId || trainingTabId,
@@ -1317,7 +1277,6 @@
         const tab = tabs.find(
           (entry) => entry.id === (finalTabId || trainingTabId),
         );
-        status = `${tab?.name ?? "Netz"}: Ziel erreicht (Abweichung 0).`;
       }
 
       isTraining = false;
@@ -1332,7 +1291,6 @@
   function handleTrainingButtonClick() {
     if (isTraining) {
       stopTrainingRequested = true;
-      status = "Stop angefordert...";
       return;
     }
     return trainActive();
@@ -1343,7 +1301,6 @@
     const next = createTab(tabCounter);
     tabs = [...tabs, next];
     activeTabId = next.id;
-    status = `${next.name} erstellt.`;
   }
 
   function activateTab(tabId) {
@@ -1526,6 +1483,7 @@
       tab.layers[layerIndex] = nextCount;
       tab.state = null;
       tab.lossHistory = [];
+      tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
@@ -1540,6 +1498,7 @@
       tab.layers.splice(tab.layers.length - 1, 0, 3);
       tab.state = null;
       tab.lossHistory = [];
+      tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
@@ -1557,6 +1516,7 @@
       tab.layers.splice(tab.layers.length - 2, 1);
       tab.state = null;
       tab.lossHistory = [];
+      tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
       tab.outputNeuronValues = Array.from(
@@ -1619,7 +1579,7 @@
 
   function setEpochs(value) {
     updateActiveTab((tab) => {
-      tab.epochs = Math.max(1, Number(value));
+      activeTab.epochs = Math.max(1, Number(value));
     });
   }
 
@@ -1961,9 +1921,11 @@
               </span>
             {/if}
           </button>
-          <button class="tab-edit btn-hover" onclick={() => beginRename(tab)}
-            >✎</button
-          >
+          {#if tab.id === activeTabId}
+            <button class="tab-edit btn-hover" onclick={() => beginRename(tab)}
+              >✎</button
+            >
+          {/if}
           <button
             class="tab-close btn-hover"
             onclick={() => closeTab(tab.id)}
@@ -2073,7 +2035,7 @@
         onclick={randomizeActiveState}
         disabled={busy || isTraining}
       >
-        <img src="/shuffle-solid-full.svg" alt="" width="16" height="16" />
+        <img src="/dice-solid-full.svg" alt="" width="16" height="16" />
         <span>Netz randomisieren</span>
       </button>
 
@@ -2089,7 +2051,7 @@
           <img src="/play-solid-full.svg" alt="" width="16" height="16" />
           <span
             >Training
-            {trainingEpochsDone > 0 ? "fortsetzen" : "starten"}
+            {activeTab.epochs > 0 ? "fortsetzen" : "starten"}
           </span>
         {/if}
       </button>
@@ -2105,7 +2067,7 @@
         {/if}
       </div>
 
-      <div class="epochs">Epochen: {trainingEpochsDone}</div>
+      <div class="epochs">Epochen: {activeTab.epochs}</div>
 
       <div class="values">
         <div><h4>Fehlerwerte</h4></div>
@@ -2148,7 +2110,7 @@
       Bias-Wert, um Bias zu aendern.
     </p>
     <div class="layer-controls">
-      <div class="layer-buttons">
+      <div class="button-group">
         <span>Hidden Layer:</span>
 
         <button
@@ -2162,16 +2124,7 @@
           >+
         </button>
       </div>
-      <button
-        class="btn-hover"
-        onclick={exportCurrentNetwork}
-        disabled={isTraining}>Netz exportieren</button
-      >
-      <button
-        class="btn-hover"
-        onclick={triggerImportNetwork}
-        disabled={isTraining}>Netz importieren</button
-      >
+
       <input
         bind:this={networkImportInputEl}
         type="file"
@@ -2196,6 +2149,32 @@
           />
         </label>
       {/each}
+
+      <div class="button-group save-network-group">
+        <span>Netzwerk:</span>
+
+        <button
+          class="btn-hover"
+          onclick={exportCurrentNetwork}
+          disabled={isTraining}
+        >
+          <img
+            src="/floppy-disk-solid-full.svg"
+            alt=""
+            width="20"
+            height="20"
+          />
+          Speichern</button
+        >
+        <button
+          class="btn-hover"
+          onclick={triggerImportNetwork}
+          disabled={isTraining}
+        >
+          <img src="/upload-solid-full.svg" alt="" width="20" height="20" />
+          Öffnen</button
+        >
+      </div>
     </div>
     <div class="graph-scroll">
       <NetworkGraph
@@ -2211,13 +2190,6 @@
       />
     </div>
   </section>
-
-  <footer class="status">
-    <p>{status}</p>
-    {#if errorText}
-      <p class="error">Fehler: {errorText}</p>
-    {/if}
-  </footer>
 
   {#if datasetModalOpen}
     <div class="modal-backdrop">
@@ -2252,32 +2224,39 @@
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
-  .layer-buttons {
+  .save-network-group {
+    margin-left: auto;
+  }
+
+  :global(.button-group) {
     display: flex;
     align-items: center;
     border-radius: 10px;
     height: 40px;
   }
 
-  .layer-buttons > span {
+  :global(.button-group > span) {
     background-color: lightgray;
     height: 100%;
     align-content: center;
     padding-left: 5px;
     padding-right: 5px;
+  }
+
+  :global(.button-group > *:first-child) {
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
   }
 
-  .layer-buttons > button {
+  :global(.button-group > *) {
     border-radius: 0;
     display: flex;
     align-items: center;
     height: 100%;
-    font-size: 20px;
+    font-size: 18px;
   }
 
-  .layer-buttons > button:last-child {
+  :global(.button-group > *:last-child) {
     border-top-right-radius: 10px;
     border-bottom-right-radius: 10px;
   }
@@ -2335,8 +2314,7 @@
   .tabs-header,
   .toolbar,
   .network-controls,
-  .network-graph-wrap,
-  .status {
+  .network-graph-wrap {
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -2377,6 +2355,7 @@
   .tab-pill.active {
     border-color: var(--accent);
     box-shadow: inset 0 0 0 1px rgba(0, 109, 119, 0.25);
+    background-color: rgba(228, 245, 245, 0.8);
   }
 
   .tab-open,
@@ -2490,6 +2469,12 @@
     text-align: left;
   }
 
+  .activation-preview-item:hover {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(0, 109, 119, 0.15);
+    background: rgba(255, 255, 255, 0.96);
+  }
+
   .activation-preview-item.active {
     border-color: var(--accent);
     box-shadow: inset 0 0 0 1px rgba(0, 109, 119, 0.25);
@@ -2536,7 +2521,7 @@
     background: linear-gradient(135deg, #b42318, #7f1d1d);
   }
 
-  :global(button > img) {
+  :global(button > img, label > img) {
     filter: invert(1);
     width: 20px;
     margin-right: auto;
@@ -2616,14 +2601,6 @@
     margin: 0 0 0.7rem;
     font-size: 0.8rem;
     opacity: 0.8;
-  }
-
-  .status {
-    font-size: 0.84rem;
-  }
-
-  .status p {
-    margin: 0;
   }
 
   .error {
@@ -2775,11 +2752,11 @@
       grid-template-columns: 1fr;
     }
 
-    .layer-buttons {
+    :global(.button-group) {
       width: 100%;
     }
 
-    .layer-buttons button {
+    :global(.button-group button) {
       flex: 1;
     }
   }

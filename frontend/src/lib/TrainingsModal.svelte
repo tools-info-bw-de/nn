@@ -51,15 +51,23 @@
   ></button>
 
   <div class="dataset-actions">
-    <button class="btn-hover" onclick={exportDatasetCsv}>CSV speichern</button>
-    <label class="btn-file btn-hover">
-      CSV laden
-      <input
-        type="file"
-        accept=".csv,text/csv"
-        onchange={onDatasetFileSelected}
-      />
-    </label>
+    <div class="button-group">
+      <span>Trainingsdaten:</span>
+
+      <button class="btn-hover" onclick={exportDatasetCsv}>
+        <img src="/floppy-disk-solid-full.svg" alt="" width="20" height="20" />
+        Speichern</button
+      >
+      <label class="btn-file btn-hover">
+        <img src="/upload-solid-full.svg" alt="" width="20" height="20" />
+        Öffnen
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          onchange={onDatasetFileSelected}
+        />
+      </label>
+    </div>
   </div>
 
   {#if trainingImportError !== ""}
@@ -206,6 +214,16 @@
 </div>
 
 <style>
+  .button-group > * {
+    font-size: inherit;
+  }
+
+  .btn-file {
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 0;
+  }
+
   tbody > tr:nth-child(odd) {
     background: rgba(0, 0, 0, 0.03);
   }
