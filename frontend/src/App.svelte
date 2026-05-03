@@ -21,6 +21,7 @@
   let busy = $state(false);
   let status = $state("Initialisiere...");
   let errorText = $state("");
+  let activationMenuOpen = $state(false);
 
   let availableActivations = $state(["binary", "logistic", "relu"]);
 
@@ -1017,6 +1018,109 @@
     });
   }
 
+  function toggleActivationMenu() {
+    activationMenuOpen = !activationMenuOpen;
+  }
+
+  function closeActivationMenu() {
+    activationMenuOpen = false;
+  }
+
+  function selectActivationFromMenu(value) {
+    setActiveActivation(value);
+    activationMenuOpen = false;
+  }
+
+  function onActivationMenuFocusOut(event) {
+    const next = event.relatedTarget;
+    const current = event.currentTarget;
+
+    if (
+      !(current instanceof HTMLElement) ||
+      !(next instanceof HTMLElement) ||
+      !current.contains(next)
+    ) {
+      activationMenuOpen = false;
+    }
+  }
+
+  function normalizeActivationName(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/-/g, "_");
+  }
+
+  function evaluateActivation(name, x) {
+    const key = normalizeActivationName(name);
+
+    if (key === "binary" || key === "step" || key === "heaviside") {
+      return x >= 0 ? 1 : 0;
+    }
+
+    if (key === "logistic" || key === "sigmoid") {
+      return 1 / (1 + Math.exp(-x));
+    }
+
+    if (key === "relu") {
+      return Math.max(0, x);
+    }
+
+    if (key === "linear" || key === "identity") {
+      return x;
+    }
+
+    // Fallback: unbekannte Aktivierung als lineare Funktion darstellen.
+    return x;
+  }
+
+  function buildActivationPreview(name) {
+    const width = 180;
+    const height = 112;
+    const padLeft = 12;
+    const padRight = 8;
+    const padTop = 10;
+    const padBottom = 12;
+
+    const plotWidth = width - padLeft - padRight;
+    const plotHeight = height - padTop - padBottom;
+
+    const xMin = -3;
+    const xMax = 3;
+    const yMin = -1;
+    const yMax = 3;
+    const xRange = xMax - xMin;
+    const yRange = yMax - yMin;
+
+    const toX = (x) => padLeft + ((x - xMin) / xRange) * plotWidth;
+    const toY = (y) => padTop + (1 - (y - yMin) / yRange) * plotHeight;
+
+    const samples = 80;
+    const points = [];
+    for (let i = 0; i <= samples; i += 1) {
+      const x = xMin + (i / samples) * xRange;
+      const y = evaluateActivation(name, x);
+      const clampedY = Math.max(yMin, Math.min(yMax, y));
+      points.push(`${toX(x)},${toY(clampedY)}`);
+    }
+
+    return {
+      width,
+      height,
+      xAxisY: toY(0),
+      yAxisX: toX(0),
+      linePoints: points.join(" "),
+    };
+  }
+
+  let activationPreviews = $derived(
+    availableActivations.map((name) => ({
+      name,
+      preview: buildActivationPreview(name),
+    })),
+  );
+
   function setActiveLearningRate(value) {
     updateActiveTab((tab) => {
       tab.learningRate = Number(value);
@@ -1445,14 +1549,66 @@
     <div class="toolbar-group">
       <label>
         Aktivierung
-        <select
-          value={activeTab.activation}
-          onchange={(e) => setActiveActivation(e.currentTarget.value)}
+        <div
+          class="activation-select-wrap"
+          onfocusout={onActivationMenuFocusOut}
         >
-          {#each availableActivations as act}
-            <option value={act}>{act}</option>
-          {/each}
-        </select>
+          <button
+            type="button"
+            class="activation-select-trigger"
+            aria-haspopup="listbox"
+            aria-expanded={activationMenuOpen}
+            onclick={toggleActivationMenu}
+          >
+            <span>{activeTab.activation}</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+
+          {#if activationMenuOpen}
+            <div
+              class="activation-preview-popover"
+              role="listbox"
+              aria-label="Aktivierungsfunktion auswaehlen"
+            >
+              {#each activationPreviews as item}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={activeTab.activation === item.name}
+                  class={`activation-preview-item ${activeTab.activation === item.name ? "active" : ""}`}
+                  onclick={() => selectActivationFromMenu(item.name)}
+                >
+                  <span class="activation-name">{item.name}</span>
+                  <svg
+                    class="activation-preview"
+                    viewBox={`0 0 ${item.preview.width} ${item.preview.height}`}
+                    aria-hidden="true"
+                  >
+                    <line
+                      class="axis"
+                      x1="0"
+                      y1={item.preview.xAxisY}
+                      x2={item.preview.width}
+                      y2={item.preview.xAxisY}
+                    ></line>
+                    <line
+                      class="axis"
+                      x1={item.preview.yAxisX}
+                      y1="0"
+                      x2={item.preview.yAxisX}
+                      y2={item.preview.height}
+                    ></line>
+                    <polyline
+                      class="curve"
+                      points={item.preview.linePoints}
+                      fill="none"
+                    ></polyline>
+                  </svg>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
       </label>
 
       <label>
@@ -1502,8 +1658,8 @@
         {:else}
           <img src="/play-solid-full.svg" alt="" width="16" height="16" />
           <span>Training starten</span>
-        {/if}</button
-      >
+        {/if}
+      </button>
     </div>
 
     <div class="loss-meta">
@@ -1516,9 +1672,7 @@
         {/if}
       </div>
 
-      <div class="epochs">
-        Epochen: {trainingEpochsDone}
-      </div>
+      <div class="epochs">Epochen: {trainingEpochsDone}</div>
 
       <div class="values">
         <div><h4>Fehlerwerte</h4></div>
@@ -1569,11 +1723,11 @@
           onclick={removeHiddenLayer}
           disabled={isTraining || activeTab.layers.length <= 2}
         >
-          -</button
-        >
+          -
+        </button>
         <button class="btn-hover" onclick={addHiddenLayer} disabled={isTraining}
-          >+</button
-        >
+          >+
+        </button>
       </div>
       {#each activeTab.layers as count, layerIndex}
         <label>
@@ -1852,6 +2006,86 @@
     justify-content: space-around;
   }
 
+  .activation-select-wrap {
+    position: relative;
+  }
+
+  .activation-select-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--ink);
+    padding: 0.5rem 0.55rem;
+    font-weight: 500;
+  }
+
+  .activation-preview-popover {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 40;
+    display: flex;
+    gap: 0.55rem;
+    align-items: stretch;
+    overflow-x: auto;
+    max-width: min(72vw, 640px);
+    padding: 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fbfaf5;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  }
+
+  .activation-preview-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 170px;
+    padding: 0.35rem;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--ink);
+    gap: 0.25rem;
+    text-align: left;
+  }
+
+  .activation-preview-item.active {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(0, 109, 119, 0.25);
+    background: rgba(228, 245, 245, 0.8);
+  }
+
+  .activation-name {
+    text-align: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.74rem;
+  }
+
+  .activation-preview {
+    width: 100%;
+    height: 90px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .activation-preview .axis {
+    stroke: rgba(31, 41, 55, 0.45);
+    stroke-width: 1;
+  }
+
+  .activation-preview .curve {
+    stroke: var(--accent-2);
+    stroke-width: 2;
+  }
+
   hr {
     width: 80%;
   }
@@ -1883,13 +2117,11 @@
   }
 
   input,
-  select,
   button {
     font: inherit;
   }
 
-  :global(input),
-  :global(select) {
+  :global(input) {
     width: 100%;
     border: 1px solid var(--line);
     border-radius: 10px;
