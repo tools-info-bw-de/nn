@@ -5,6 +5,8 @@
     orderedConnections,
     activeTab,
     setInputNeuronValue,
+    editInputNeuronName,
+    editOutputNeuronName,
     editWeight,
     editBias,
   } = $props();
@@ -86,10 +88,10 @@
         <circle class="node input" cx={node.x} cy={node.y} r="16"></circle>
         <foreignObject
           class="node-input-wrap"
-          x={Math.max(8, node.x - 70)}
-          y={node.y - 13}
-          width="50"
-          height="22"
+          x={Math.max(8, node.x - 20)}
+          y={node.y - 12}
+          width="30"
+          height="18"
         >
           <input
             class="node-input"
@@ -100,11 +102,52 @@
           />
         </foreignObject>
       {:else}
-        <circle
-          class="node editable"
-          cx={node.x}
-          cy={node.y}
-          r="16"
+        <circle class="node editable" cx={node.x} cy={node.y} r="16"></circle>
+      {/if}
+      {#if node.layer === 0}
+        <text
+          class="node-index node-index-input"
+          x={node.x}
+          y={node.y - 20}
+          role="button"
+          tabindex="0"
+          onclick={() => editInputNeuronName(node.node)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              editInputNeuronName(node.node);
+            }
+          }}
+        >
+          {activeTab.inputNeuronNames?.[node.node] ?? `input${node.node + 1}`}
+        </text>
+      {:else if node.layer === activeTab.layers.length - 1}
+        <text
+          class="node-index node-index-output"
+          x={node.x}
+          y={node.y - 20}
+          role="button"
+          tabindex="0"
+          onclick={() => editOutputNeuronName(node.node)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              editOutputNeuronName(node.node);
+            }
+          }}
+        >
+          {activeTab.outputNeuronNames?.[node.node] ?? `output${node.node + 1}`}
+        </text>
+      {:else}
+        <text class="node-index" x={node.x} y={node.y + 4}
+          >N{node.node + 1}</text
+        >
+      {/if}
+      {#if node.layer > 0 && activeTab.state}
+        <text
+          class="node-bias"
+          x={node.x}
+          y={node.y + 28}
           role="button"
           tabindex="0"
           onclick={() => editBias(node.layer, node.node)}
@@ -114,11 +157,7 @@
               editBias(node.layer, node.node);
             }
           }}
-        ></circle>
-      {/if}
-      <text class="node-index" x={node.x} y={node.y + 4}>N{node.node + 1}</text>
-      {#if node.layer > 0 && activeTab.state}
-        <text class="node-bias" x={node.x} y={node.y + 28}>
+        >
           b:{Number(activeTab.state.biases[node.layer - 1][node.node]).toFixed(
             2,
           )}
@@ -190,7 +229,6 @@
   .node.editable {
     fill: #dcfce7;
     stroke: #22a362;
-    cursor: pointer;
   }
 
   .node-index {
@@ -199,10 +237,25 @@
     fill: #111827;
   }
 
+  .node-index-input {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  .node-index-output {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
   .node-bias {
     text-anchor: middle;
     font-size: 9px;
     fill: #475569;
+    cursor: pointer;
   }
 
   .node-input-wrap {

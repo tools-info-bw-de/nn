@@ -5,6 +5,8 @@
     trainingWindowSize,
     setDatasetRowInput,
     setDatasetRowOutput,
+    editInputNeuronName,
+    editOutputNeuronName,
     addDatasetRow,
     removeDatasetRow,
     exportDatasetCsv,
@@ -28,7 +30,9 @@
     onmousedown={startTrainingWindowDrag}
   >
     <div class="modal-title">Trainingsdaten bearbeiten</div>
-    <button onclick={() => (datasetModalOpen = false)}>X</button>
+    <button class="btn-hover" onclick={() => (datasetModalOpen = false)}
+      >X</button
+    >
   </div>
 
   <button
@@ -64,10 +68,28 @@
         </tr>
         <tr>
           {#each Array.from({ length: activeTab.layers[0] }, (_, idx) => idx) as idx}
-            <th>I{idx + 1}</th>
+            <th>
+              <button
+                type="button"
+                class="input-name-btn"
+                title="Input-Namen aendern"
+                onclick={() => editInputNeuronName(idx)}
+              >
+                {activeTab.inputNeuronNames?.[idx] ?? `input${idx + 1}`}
+              </button>
+            </th>
           {/each}
           {#each Array.from({ length: activeTab.layers[activeTab.layers.length - 1] }, (_, idx) => idx) as idx}
-            <th class={idx === 0 ? "outputs-header" : ""}>O{idx + 1}</th>
+            <th class={idx === 0 ? "outputs-header" : ""}>
+              <button
+                type="button"
+                class="input-name-btn"
+                title="Output-Namen aendern"
+                onclick={() => editOutputNeuronName(idx)}
+              >
+                {activeTab.outputNeuronNames?.[idx] ?? `output${idx + 1}`}
+              </button>
+            </th>
           {/each}
           <th></th>
         </tr>
@@ -118,6 +140,10 @@
 </div>
 
 <style>
+  th {
+    font-family: sans-serif;
+  }
+
   .dataset-modal {
     min-width: 540px;
     min-height: 320px;
@@ -169,6 +195,19 @@
   .dataset-grid th {
     font-size: 0.78rem;
     background: rgba(0, 0, 0, 0.03);
+  }
+
+  .input-name-btn {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    padding: 0;
   }
 
   .dataset-grid td input {

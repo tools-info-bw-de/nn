@@ -170,9 +170,17 @@
       inputNeuronValues: Array.from({ length: layers[0] }, (_, idx) =>
         String(defaultInputValues[idx] ?? 0),
       ),
+      inputNeuronNames: Array.from(
+        { length: layers[0] },
+        (_, idx) => `input${idx + 1}`,
+      ),
       outputNeuronValues: Array.from(
         { length: layers[layers.length - 1] },
         () => "-",
+      ),
+      outputNeuronNames: Array.from(
+        { length: layers[layers.length - 1] },
+        (_, idx) => `output${idx + 1}`,
       ),
       lossHistory: [],
       trainerId: "",
@@ -216,6 +224,15 @@
       (_, idx) => prevInputs[idx] ?? "0",
     );
 
+    const prevInputNames = Array.isArray(tab.inputNeuronNames)
+      ? tab.inputNeuronNames
+      : [];
+
+    tab.inputNeuronNames = Array.from({ length: inputCount }, (_, idx) => {
+      const raw = String(prevInputNames[idx] ?? "").trim();
+      return raw.length > 0 ? raw : `input${idx + 1}`;
+    });
+
     const prevOutputs = Array.isArray(tab.outputNeuronValues)
       ? tab.outputNeuronValues
       : [];
@@ -224,6 +241,15 @@
       { length: outputCount },
       (_, idx) => prevOutputs[idx] ?? "-",
     );
+
+    const prevOutputNames = Array.isArray(tab.outputNeuronNames)
+      ? tab.outputNeuronNames
+      : [];
+
+    tab.outputNeuronNames = Array.from({ length: outputCount }, (_, idx) => {
+      const raw = String(prevOutputNames[idx] ?? "").trim();
+      return raw.length > 0 ? raw : `output${idx + 1}`;
+    });
   }
 
   function parseNeuronInputs(tab) {
@@ -1187,6 +1213,46 @@
     runLiveInferenceForTab(tabId, { ensureState: true });
   }
 
+  function editInputNeuronName(nodeIndex) {
+    const tab = getActiveTab();
+    const current = String(
+      tab.inputNeuronNames?.[nodeIndex] ?? `input${nodeIndex + 1}`,
+    );
+
+    const value = window.prompt(`Name fuer Input ${nodeIndex + 1}`, current);
+
+    if (value === null) {
+      return;
+    }
+
+    const nextName = value.trim() || `input${nodeIndex + 1}`;
+
+    updateActiveTab((next) => {
+      normalizeTabNeuronIo(next);
+      next.inputNeuronNames[nodeIndex] = nextName;
+    });
+  }
+
+  function editOutputNeuronName(nodeIndex) {
+    const tab = getActiveTab();
+    const current = String(
+      tab.outputNeuronNames?.[nodeIndex] ?? `output${nodeIndex + 1}`,
+    );
+
+    const value = window.prompt(`Name fuer Output ${nodeIndex + 1}`, current);
+
+    if (value === null) {
+      return;
+    }
+
+    const nextName = value.trim() || `output${nodeIndex + 1}`;
+
+    updateActiveTab((next) => {
+      normalizeTabNeuronIo(next);
+      next.outputNeuronNames[nodeIndex] = nextName;
+    });
+  }
+
   function setEpochs(value) {
     updateActiveTab((tab) => {
       tab.epochs = Math.max(1, Number(value));
@@ -1615,8 +1681,8 @@
         Lernrate
         <input
           type="number"
-          min="0.001"
-          step="0.001"
+          min="0.00"
+          step="0.1"
           value={activeTab.learningRate}
           oninput={(e) => setActiveLearningRate(e.currentTarget.value)}
         />
@@ -1711,8 +1777,8 @@
   <section class="network-graph-wrap">
     <h2>Live-Netzansicht (Klicken zum Bearbeiten)</h2>
     <p class="hint">
-      Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf
-      Knoten in Hidden/Output, um Bias zu aendern.
+      Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf den
+      Bias-Wert, um Bias zu aendern.
     </p>
     <div class="layer-controls">
       <div class="layer-buttons">
@@ -1754,6 +1820,8 @@
         {highlightedConnectionId}
         {activeTab}
         {setInputNeuronValue}
+        {editInputNeuronName}
+        {editOutputNeuronName}
         {editWeight}
         {editBias}
       />
@@ -1775,6 +1843,8 @@
         {trainingWindowSize}
         {setDatasetRowInput}
         {setDatasetRowOutput}
+        {editInputNeuronName}
+        {editOutputNeuronName}
         {addDatasetRow}
         {removeDatasetRow}
         {exportDatasetCsv}
