@@ -59,14 +59,15 @@
     <table class="dataset-grid">
       <thead>
         <tr>
-          <th colspan={activeTab.layers[0]}>Inputs</th>
+          <th colspan={activeTab.layers[0] + 1}>Inputs</th>
           <th
             colspan={activeTab.layers[activeTab.layers.length - 1]}
             class="outputs-header">Outputs</th
           >
-          <th>Aktion</th>
+          <th></th>
         </tr>
         <tr>
+          <th>Nr.</th>
           {#each Array.from({ length: activeTab.layers[0] }, (_, idx) => idx) as idx}
             <th>
               <button
@@ -97,6 +98,7 @@
       <tbody>
         {#each activeTab.datasetRows as row, rowIndex}
           <tr>
+            <td>{rowIndex + 1}</td>
             {#each row.input as value, inputIndex}
               <td>
                 <input
@@ -129,7 +131,14 @@
               <button
                 class="btn-hover"
                 onclick={() => removeDatasetRow(rowIndex)}
-                disabled={activeTab.datasetRows.length <= 1}>Loeschen</button
+                disabled={activeTab.datasetRows.length <= 1}
+                tabIndex="-1"
+                ><img
+                  src="/trash-solid-full.svg"
+                  alt=""
+                  width="16"
+                  height="16"
+                /></button
               >
             </td>
           </tr>

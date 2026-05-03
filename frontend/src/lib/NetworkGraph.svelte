@@ -174,7 +174,9 @@
 
 <style>
   .network-graph {
+    display: block;
     width: 100%;
+    height: auto;
     min-width: 700px;
     border-radius: 12px;
     background: rgba(250, 250, 250, 0.78);

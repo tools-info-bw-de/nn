@@ -378,12 +378,14 @@
     const inputCount = active.layers[0] ?? 0;
     const outputCount = active.layers[active.layers.length - 1] ?? 0;
 
-    const header = [
-      ...Array.from({ length: outputCount }, (_, idx) => `output_${idx + 1}`),
-      ...Array.from({ length: inputCount }, (_, idx) => `input_${idx + 1}`),
-    ];
+    // speichere die anzahl von input/output-neuronen in der ersten zeile
+    const nodeCount = "in:" + inputCount + ",out:" + outputCount;
 
-    const lines = [header.join(",")];
+    const lines = [nodeCount];
+
+    // neuron-namen:
+    const header = [...active.inputNeuronNames, ...active.outputNeuronNames];
+    lines.push(header.join(","));
 
     for (const row of rows) {
       const values = [
@@ -557,7 +559,7 @@
     const layers = state.layers;
     const width = Math.max(680, 180 * layers.length);
     const maxNodes = Math.max(...layers);
-    const height = Math.max(340, 90 * maxNodes);
+    const height = Math.min(600, Math.max(340, 90 * maxNodes));
 
     const leftPad = 90;
     const rightPad = 90;
@@ -2170,7 +2172,7 @@
     background: linear-gradient(135deg, #b42318, #7f1d1d);
   }
 
-  .toolbar-group > button > img {
+  :global(button > img) {
     filter: invert(1);
     width: 20px;
     margin-right: auto;
