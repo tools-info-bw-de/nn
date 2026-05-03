@@ -49,8 +49,13 @@
 
   let datasetModalOpen = $state(false);
   let datasetImportPromptOpen = $state(false);
+  let datasetImportStep = $state("");
   let pendingImportCsvText = "";
   let pendingImportFirstLine = $state("");
+  let pendingImportSecondLine = $state("");
+  let pendingImportInputCount = 0;
+  let pendingImportOutputCount = 0;
+  let pendingImportDelimiter = ",";
 
   let isTraining = $state(false);
   let stopTrainingRequested = false;
@@ -312,6 +317,175 @@
     return line.split(delimiter).map((part) => part.trim());
   }
 
+  let trainingImportError = $state("");
+  function parseNodeCountLine(line) {
+    const match = String(line || "").match(
+      /^in\s*:\s*(\d+)\s*,\s*out\s*:\s*(\d+)$/i,
+    );
+
+    if (!match) {
+      console.log("aah");
+      trainingImportError =
+        "CSV-Import abgebrochen: Erste Zeile muss im Format <code>in:x,out:y</code> vorliegen (z. B. <code>in:3,out:2</code> -> 3 Input- und 2 Output-Neuronen).";
+      return;
+    }
+
+    const inputCount = Number(match[1]);
+    const outputCount = Number(match[2]);
+
+    if (
+      !Number.isInteger(inputCount) ||
+      !Number.isInteger(outputCount) ||
+      inputCount < 1 ||
+      outputCount < 1
+    ) {
+      throw new Error(
+        "CSV-Import abgebrochen: in:x,out:y muss positive Ganzzahlen enthalten.",
+      );
+    }
+
+    return { inputCount, outputCount };
+  }
+
+  function parseImportRows(
+    lines,
+    delimiter,
+    startIndex,
+    inputCount,
+    outputCount,
+  ) {
+    const neededColumns = inputCount + outputCount;
+    const dataRows = lines.slice(startIndex);
+
+    if (dataRows.length === 0) {
+      throw new Error("Keine Datenzeilen in CSV gefunden.");
+    }
+
+    return dataRows.map((line, rowIndex) => {
+      const row = splitCsvLine(line, delimiter);
+      if (row.length < neededColumns) {
+        throw new Error(
+          `CSV-Zeile ${rowIndex + 1} hat zu wenige Spalten (erwartet ${neededColumns}).`,
+        );
+      }
+
+      const input = Array.from({ length: inputCount }, (_, idx) => {
+        const value = Number(row[idx]);
+        if (!Number.isFinite(value)) {
+          throw new Error(
+            `Ungültiger Input-Wert in CSV-Zeile ${rowIndex + 1}.`,
+          );
+        }
+        return value;
+      });
+
+      const target = Array.from({ length: outputCount }, (_, idx) => {
+        const value = Number(row[inputCount + idx]);
+        if (!Number.isFinite(value)) {
+          throw new Error(
+            `Ungültiger Output-Wert in CSV-Zeile ${rowIndex + 1}.`,
+          );
+        }
+        return value;
+      });
+
+      return { input, target };
+    });
+  }
+
+  function parseImportNames(lines, delimiter, inputCount, outputCount) {
+    const neededColumns = inputCount + outputCount;
+    if (lines.length < 2) {
+      throw new Error("Es gibt keine zweite Zeile für Knotennamen.");
+    }
+
+    const values = splitCsvLine(lines[1], delimiter);
+    if (values.length < neededColumns) {
+      throw new Error(
+        `Die zweite Zeile hat zu wenige Knotennamen (erwartet ${neededColumns}).`,
+      );
+    }
+
+    const inputNames = Array.from({ length: inputCount }, (_, idx) => {
+      const raw = String(values[idx] ?? "").trim();
+      return raw.length > 0 ? raw : `input${idx + 1}`;
+    });
+
+    const outputNames = Array.from({ length: outputCount }, (_, idx) => {
+      const raw = String(values[inputCount + idx] ?? "").trim();
+      return raw.length > 0 ? raw : `output${idx + 1}`;
+    });
+
+    return { inputNames, outputNames };
+  }
+
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    return a.every((value, idx) => String(value) === String(b[idx]));
+  }
+
+  function closeDatasetImportPrompt() {
+    datasetImportPromptOpen = false;
+    datasetImportStep = "";
+    pendingImportCsvText = "";
+    pendingImportFirstLine = "";
+    pendingImportSecondLine = "";
+    pendingImportInputCount = 0;
+    pendingImportOutputCount = 0;
+    pendingImportDelimiter = ",";
+  }
+
+  function applyImportedDataset(
+    parsedRows,
+    importedNames = null,
+    adoptNames = false,
+  ) {
+    const inputCount = pendingImportInputCount;
+    const outputCount = pendingImportOutputCount;
+
+    updateActiveTab((tab) => {
+      const previousInputNames = Array.isArray(tab.inputNeuronNames)
+        ? [...tab.inputNeuronNames]
+        : [];
+      const previousOutputNames = Array.isArray(tab.outputNeuronNames)
+        ? [...tab.outputNeuronNames]
+        : [];
+
+      tab.layers[0] = inputCount;
+      tab.layers[tab.layers.length - 1] = outputCount;
+      tab.state = null;
+      tab.lossHistory = [];
+
+      normalizeTabNeuronIo(tab);
+
+      tab.datasetRows = parsedRows;
+
+      if (adoptNames && importedNames) {
+        tab.inputNeuronNames = [...importedNames.inputNames];
+        tab.outputNeuronNames = [...importedNames.outputNames];
+      } else {
+        tab.inputNeuronNames = Array.from({ length: inputCount }, (_, idx) => {
+          const raw = String(previousInputNames[idx] ?? "").trim();
+          return raw.length > 0 ? raw : `input${idx + 1}`;
+        });
+
+        tab.outputNeuronNames = Array.from(
+          { length: outputCount },
+          (_, idx) => {
+            const raw = String(previousOutputNames[idx] ?? "").trim();
+            return raw.length > 0 ? raw : `output${idx + 1}`;
+          },
+        );
+      }
+
+      normalizeTabNeuronIo(tab);
+      normalizeDatasetRows(tab);
+      tab.outputNeuronValues = Array.from({ length: outputCount }, () => "-");
+    });
+  }
+
   function openDatasetModal() {
     updateActiveTab((tab) => {
       normalizeDatasetRows(tab);
@@ -389,8 +563,8 @@
 
     for (const row of rows) {
       const values = [
-        ...row.target.map((value) => String(value)),
         ...row.input.map((value) => String(value)),
+        ...row.target.map((value) => String(value)),
       ];
       lines.push(values.join(","));
     }
@@ -407,91 +581,138 @@
   }
 
   async function onDatasetFileSelected(event) {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) {
-      return;
-    }
-
-    const text = await file.text();
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length === 0) {
-      throw new Error("CSV-Datei ist leer.");
-    }
-
-    pendingImportCsvText = text;
-    pendingImportFirstLine = lines[0];
-    datasetImportPromptOpen = true;
-  }
-
-  function closeDatasetImportPrompt() {
-    datasetImportPromptOpen = false;
-    pendingImportCsvText = "";
-    pendingImportFirstLine = "";
-  }
-
-  function importDatasetCsv(hasHeader) {
-    const active = getActiveTab();
-    const inputCount = active.layers[0] ?? 0;
-    const outputCount = active.layers[active.layers.length - 1] ?? 0;
-    const neededColumns = inputCount + outputCount;
-
-    const lines = pendingImportCsvText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length === 0) {
-      throw new Error("CSV-Datei ist leer.");
-    }
-
-    const delimiter = detectCsvDelimiter(lines);
-    const allRows = lines.map((line) => splitCsvLine(line, delimiter));
-    const dataRows = hasHeader ? allRows.slice(1) : allRows;
-
-    if (dataRows.length === 0) {
-      throw new Error("Keine Datenzeilen in CSV gefunden.");
-    }
-
-    const parsedRows = dataRows.map((row, rowIndex) => {
-      if (row.length < neededColumns) {
-        throw new Error(
-          `CSV-Zeile ${rowIndex + 1} hat zu wenige Spalten (erwartet ${neededColumns}).`,
-        );
+    try {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) {
+        return;
       }
 
-      const target = Array.from({ length: outputCount }, (_, idx) => {
-        const value = Number(row[idx]);
-        if (!Number.isFinite(value)) {
-          throw new Error(
-            `Ungueltiger Output-Wert in CSV-Zeile ${rowIndex + 1}.`,
-          );
-        }
-        return value;
-      });
+      const text = await file.text();
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
 
-      const input = Array.from({ length: inputCount }, (_, idx) => {
-        const value = Number(row[outputCount + idx]);
-        if (!Number.isFinite(value)) {
-          throw new Error(
-            `Ungueltiger Input-Wert in CSV-Zeile ${rowIndex + 1}.`,
-          );
-        }
-        return value;
-      });
+      if (lines.length === 0) {
+        throw new Error("CSV-Datei ist leer.");
+      }
 
-      return { input, target };
-    });
+      const { inputCount, outputCount } = parseNodeCountLine(lines[0]);
+      const delimiter = detectCsvDelimiter(
+        lines.length > 1 ? lines.slice(1) : lines,
+      );
 
-    updateActiveTab((tab) => {
-      tab.datasetRows = parsedRows;
-    });
+      pendingImportCsvText = text;
+      pendingImportFirstLine = lines[0];
+      pendingImportSecondLine = lines[1] ?? "(keine zweite Zeile vorhanden)";
+      pendingImportInputCount = inputCount;
+      pendingImportOutputCount = outputCount;
+      pendingImportDelimiter = delimiter;
+      datasetImportStep = "ask-second-line";
+      datasetImportPromptOpen = true;
+      errorText = "";
+    } catch (error) {
+      closeDatasetImportPrompt();
+      errorText = error instanceof Error ? error.message : String(error);
+    }
+  }
 
-    closeDatasetImportPrompt();
+  function answerImportSecondLineIsNames(isNames) {
+    try {
+      const lines = pendingImportCsvText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      if (!isNames) {
+        const parsedRows = parseImportRows(
+          lines,
+          pendingImportDelimiter,
+          1,
+          pendingImportInputCount,
+          pendingImportOutputCount,
+        );
+        applyImportedDataset(parsedRows, null, false);
+        closeDatasetImportPrompt();
+        status = "Trainingsdaten importiert.";
+        return;
+      }
+
+      const importedNames = parseImportNames(
+        lines,
+        pendingImportDelimiter,
+        pendingImportInputCount,
+        pendingImportOutputCount,
+      );
+
+      const active = getActiveTab();
+      const currentInputNames = Array.from(
+        { length: pendingImportInputCount },
+        (_, idx) => String(active.inputNeuronNames?.[idx] ?? `input${idx + 1}`),
+      );
+      const currentOutputNames = Array.from(
+        { length: pendingImportOutputCount },
+        (_, idx) =>
+          String(active.outputNeuronNames?.[idx] ?? `output${idx + 1}`),
+      );
+
+      const namesDiffer =
+        !arraysEqual(currentInputNames, importedNames.inputNames) ||
+        !arraysEqual(currentOutputNames, importedNames.outputNames);
+
+      if (!namesDiffer) {
+        const parsedRows = parseImportRows(
+          lines,
+          pendingImportDelimiter,
+          2,
+          pendingImportInputCount,
+          pendingImportOutputCount,
+        );
+        applyImportedDataset(parsedRows, importedNames, true);
+        closeDatasetImportPrompt();
+        status = "Trainingsdaten importiert.";
+        return;
+      }
+
+      datasetImportStep = "ask-adopt-names";
+      errorText = "";
+    } catch (error) {
+      closeDatasetImportPrompt();
+      errorText = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function answerImportAdoptNames(adoptNames) {
+    try {
+      const lines = pendingImportCsvText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      const importedNames = parseImportNames(
+        lines,
+        pendingImportDelimiter,
+        pendingImportInputCount,
+        pendingImportOutputCount,
+      );
+
+      const parsedRows = parseImportRows(
+        lines,
+        pendingImportDelimiter,
+        2,
+        pendingImportInputCount,
+        pendingImportOutputCount,
+      );
+
+      applyImportedDataset(parsedRows, importedNames, adoptNames);
+      closeDatasetImportPrompt();
+      status = "Trainingsdaten importiert.";
+      errorText = "";
+    } catch (error) {
+      closeDatasetImportPrompt();
+      errorText = error instanceof Error ? error.message : String(error);
+    }
   }
 
   function delay(ms) {
@@ -1221,7 +1442,7 @@
       tab.inputNeuronNames?.[nodeIndex] ?? `input${nodeIndex + 1}`,
     );
 
-    const value = window.prompt(`Name fuer Input ${nodeIndex + 1}`, current);
+    const value = window.prompt(`Name für Input ${nodeIndex + 1}`, current);
 
     if (value === null) {
       return;
@@ -1241,7 +1462,7 @@
       tab.outputNeuronNames?.[nodeIndex] ?? `output${nodeIndex + 1}`,
     );
 
-    const value = window.prompt(`Name fuer Output ${nodeIndex + 1}`, current);
+    const value = window.prompt(`Name für Output ${nodeIndex + 1}`, current);
 
     if (value === null) {
       return;
@@ -1290,7 +1511,7 @@
       }
       const num = Number(value);
       if (!Number.isFinite(num)) {
-        throw new Error("Ungueltiger Zahlenwert fuer Gewicht.");
+        throw new Error("Ungueltiger Zahlenwert für Gewicht.");
       }
 
       updateActiveTab((next) => {
@@ -1843,6 +2064,10 @@
         {activeTab}
         {trainingWindowPosition}
         {trainingWindowSize}
+        {datasetImportPromptOpen}
+        {datasetImportStep}
+        {pendingImportFirstLine}
+        {pendingImportSecondLine}
         {setDatasetRowInput}
         {setDatasetRowOutput}
         {editInputNeuronName}
@@ -1851,36 +2076,14 @@
         {removeDatasetRow}
         {exportDatasetCsv}
         {onDatasetFileSelected}
+        {answerImportSecondLineIsNames}
+        {answerImportAdoptNames}
+        {closeDatasetImportPrompt}
         {startTrainingWindowDrag}
         {startTrainingWindowResize}
+        bind:trainingImportError
         bind:datasetModalOpen
       />
-    </div>
-  {/if}
-
-  {#if datasetImportPromptOpen}
-    <div class="modal-backdrop">
-      <div class="modal-window import-modal" role="dialog" aria-modal="true">
-        <div class="modal-head">
-          <div class="modal-title">CSV-Import</div>
-          <button onclick={closeDatasetImportPrompt}>X</button>
-        </div>
-
-        <p>Hat die CSV einen Header?</p>
-        <p class="csv-first-line">Erste Zeile: {pendingImportFirstLine}</p>
-
-        <div class="import-actions">
-          <button class="btn-hover" onclick={() => importDatasetCsv(true)}
-            >Mit Header importieren</button
-          >
-          <button class="btn-hover" onclick={() => importDatasetCsv(false)}
-            >Ohne Header importieren</button
-          >
-          <button class="btn-hover" onclick={closeDatasetImportPrompt}
-            >Abbrechen</button
-          >
-        </div>
-      </div>
     </div>
   {/if}
 </main>

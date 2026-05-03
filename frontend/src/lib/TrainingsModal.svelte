@@ -3,6 +3,10 @@
     activeTab,
     trainingWindowPosition,
     trainingWindowSize,
+    datasetImportPromptOpen,
+    datasetImportStep,
+    pendingImportFirstLine,
+    pendingImportSecondLine,
     setDatasetRowInput,
     setDatasetRowOutput,
     editInputNeuronName,
@@ -11,9 +15,13 @@
     removeDatasetRow,
     exportDatasetCsv,
     onDatasetFileSelected,
+    answerImportSecondLineIsNames,
+    answerImportAdoptNames,
+    closeDatasetImportPrompt,
     startTrainingWindowDrag,
     startTrainingWindowResize,
     datasetModalOpen = $bindable(true),
+    trainingImportError = $bindable(""),
   } = $props();
 </script>
 
@@ -43,7 +51,6 @@
   ></button>
 
   <div class="dataset-actions">
-    <button class="btn-hover" onclick={addDatasetRow}>+ Zeile</button>
     <button class="btn-hover" onclick={exportDatasetCsv}>CSV speichern</button>
     <label class="btn-file btn-hover">
       CSV laden
@@ -54,6 +61,53 @@
       />
     </label>
   </div>
+
+  {#if trainingImportError !== ""}
+    <div class="inline-import-box">
+      <p class="inline-import-line text-danger">{@html trainingImportError}</p>
+      <div class="inline-import-actions">
+        <button class="btn-hover" onclick={() => (trainingImportError = "")}
+          >OK</button
+        >
+      </div>
+    </div>
+  {/if}
+
+  {#if datasetImportPromptOpen}
+    <div class="inline-import-box">
+      <div class="inline-import-title">CSV-Import prüfen:</div>
+      <p class="inline-import-line">
+        Erste Zeile: <code>{pendingImportFirstLine}</code>
+      </p>
+      <p class="inline-import-line">
+        Zweite Zeile: <code>{pendingImportSecondLine}</code>
+      </p>
+
+      {#if datasetImportStep === "ask-second-line"}
+        <p class="inline-import-question">
+          Sind die Werte in der zweiten Zeile die Namen der Neuronen?
+        </p>
+        <div class="inline-import-actions">
+          <button class="btn-hover" onclick={() => answerImportAdoptNames(true)}
+            >Ja, und die Namen übernehmen</button
+          >
+          <button
+            class="btn-hover"
+            onclick={() => answerImportAdoptNames(false)}
+            >Ja, aber die aktuellen Namen beibehalten</button
+          >
+          <button
+            class="btn-hover"
+            onclick={() => answerImportSecondLineIsNames(false)}
+            >Nein, keine Namen</button
+          >
+          <button class="btn-hover" onclick={closeDatasetImportPrompt}
+            >Import abbrechen</button
+          >
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="dataset-grid-wrap">
     <table class="dataset-grid">
@@ -73,7 +127,7 @@
               <button
                 type="button"
                 class="input-name-btn"
-                title="Input-Namen aendern"
+                title="Input-Namen ändern"
                 onclick={() => editInputNeuronName(idx)}
               >
                 {activeTab.inputNeuronNames?.[idx] ?? `input${idx + 1}`}
@@ -85,7 +139,7 @@
               <button
                 type="button"
                 class="input-name-btn"
-                title="Output-Namen aendern"
+                title="Output-Namen ändern"
                 onclick={() => editOutputNeuronName(idx)}
               >
                 {activeTab.outputNeuronNames?.[idx] ?? `output${idx + 1}`}
@@ -146,9 +200,33 @@
       </tbody>
     </table>
   </div>
+  <div class="addRow">
+    <button class="btn-hover" onclick={addDatasetRow}>+ Zeile</button>
+  </div>
 </div>
 
 <style>
+  tbody > tr:nth-child(odd) {
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  .addRow {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+
+  :global(code) {
+    background-color: rgb(66, 66, 66);
+    padding: 0.2rem;
+    color: white;
+    border-radius: 4px;
+  }
+
+  .text-danger {
+    color: var(--danger);
+  }
+
   th {
     font-family: sans-serif;
   }
@@ -221,6 +299,32 @@
 
   .dataset-grid td input {
     width: 5.5rem;
+  }
+
+  .inline-import-box {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .inline-import-title {
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+  }
+
+  .inline-import-line,
+  .inline-import-question {
+    margin: 0.2rem 0;
+    font-size: 0.82rem;
+  }
+
+  .inline-import-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.45rem;
   }
 
   .resize-handle {
