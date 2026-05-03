@@ -18,24 +18,24 @@
   const defaultInputValues = [1, 0];
 
   let wasmReady = false;
-  let busy = false;
-  let status = "Initialisiere...";
-  let errorText = "";
+  let busy = $state(false);
+  let status = $state("Initialisiere...");
+  let errorText = $state("");
 
-  let availableActivations = ["binary", "logistic", "relu"];
+  let availableActivations = $state(["binary", "logistic", "relu"]);
 
   let tabCounter = 1;
-  let tabs = [createTab(tabCounter)];
-  let activeTabId = tabs[0].id;
+  let tabs = $state([createTab(tabCounter)]);
+  let activeTabId = $state(tabs[0].id);
 
-  let renamingTabId = "";
-  let renameDraft = "";
+  let renamingTabId = $state("");
+  let renameDraft = $state("");
 
-  let trainingWindowPosition = { x: 250, y: 150 };
-  let trainingWindowSize = { width: 960, height: 520 };
-  let trainingWindowDragging = false;
+  let trainingWindowPosition = $state({ x: 250, y: 150 });
+  let trainingWindowSize = $state({ width: 960, height: 520 });
+  let trainingWindowDragging = $state(false);
   let trainingWindowDragOffset = { x: 0, y: 0 };
-  let trainingWindowResizing = false;
+  let trainingWindowResizing = $state(false);
   let trainingWindowResizeDir = "";
   let trainingWindowResizeStart = {
     x: 0,
@@ -46,21 +46,21 @@
     top: 0,
   };
 
-  let datasetModalOpen = false;
-  let datasetImportPromptOpen = false;
+  let datasetModalOpen = $state(false);
+  let datasetImportPromptOpen = $state(false);
   let pendingImportCsvText = "";
-  let pendingImportFirstLine = "";
+  let pendingImportFirstLine = $state("");
 
-  let isTraining = false;
+  let isTraining = $state(false);
   let stopTrainingRequested = false;
   let trainingTabId = "";
   let trainingTrainerId = "";
   let trainingEpochOffset = 0;
   let trainingLossHistoryBase = [];
-  let trainingEpochsDone = 0;
+  let trainingEpochsDone = $state(0);
   let trainingLastLoss = null;
   let trainingDeviation = null;
-  let highlightedConnectionId = "";
+  let highlightedConnectionId = $state("");
   let liveInferenceRunId = 0;
   let nnWorker = null;
   let nnWorkerReadyPromise = null;
@@ -125,13 +125,14 @@
     }
 
     const requestId = ++nnWorkerRequestId;
+    const safePayload = clone(payload);
     return new Promise((resolve, reject) => {
       nnWorkerPending.set(requestId, { resolve, reject });
       nnWorker.postMessage({
         type: "call",
         id: requestId,
         method,
-        payload,
+        payload: safePayload,
       });
     });
   }
@@ -1163,10 +1164,17 @@
     });
   }
 
-  $: activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
-  $: stateForDraw = activeTab?.state || buildPlaceholderState(activeTab);
-  $: graph = geometryFromState(stateForDraw);
-  $: orderedConnections = (() => {
+  let activeTab = $derived(
+    tabs.find((tab) => tab.id === activeTabId) || tabs[0],
+  );
+
+  let stateForDraw = $derived(
+    activeTab?.state || buildPlaceholderState(activeTab),
+  );
+
+  let graph = $derived(geometryFromState(stateForDraw));
+
+  let orderedConnections = $derived.by(() => {
     if (!graph?.connections?.length) {
       return [];
     }
@@ -1185,8 +1193,9 @@
       ),
       selected,
     ];
-  })();
-  $: hasLoss = activeTab?.lossHistory?.length > 0;
+  });
+
+  let hasLoss = $derived(activeTab?.lossHistory?.length > 0);
 
   function startTrainingWindowDrag(event) {
     if (event.target?.closest("button")) {
@@ -1290,7 +1299,7 @@
     trainingWindowResizeDir = "";
   }
 
-  $: lossChart = (() => {
+  let lossChart = $derived.by(() => {
     const history = activeTab?.lossHistory || [];
 
     const width = 640;
@@ -1371,7 +1380,7 @@
       yAxisX: padLeft,
       hasLine: history.length >= 2,
     };
-  })();
+  });
 
   onMount(() => {
     window.addEventListener("mousemove", onGlobalMouseMove);
@@ -1397,13 +1406,13 @@
     <div class="tab-row">
       {#each tabs as tab}
         <div class={`tab-pill ${tab.id === activeTabId ? "active" : ""}`}>
-          <button class="tab-open" on:click={() => activateTab(tab.id)}>
+          <button class="tab-open" onclick={() => activateTab(tab.id)}>
             {#if renamingTabId === tab.id}
               <input
                 class="rename-input"
                 bind:value={renameDraft}
-                on:blur={finishRename}
-                on:keydown={(e) => {
+                onblur={finishRename}
+                onkeydown={(e) => {
                   if (e.key === "Enter") {
                     finishRename();
                   }
@@ -1418,17 +1427,17 @@
               </span>
             {/if}
           </button>
-          <button class="tab-edit btn-hover" on:click={() => beginRename(tab)}
+          <button class="tab-edit btn-hover" onclick={() => beginRename(tab)}
             >✎</button
           >
           <button
             class="tab-close btn-hover"
-            on:click={() => closeTab(tab.id)}
+            onclick={() => closeTab(tab.id)}
             disabled={tabs.length === 1}>×</button
           >
         </div>
       {/each}
-      <button class="tab-add btn-hover" on:click={addTab}>+ Netz</button>
+      <button class="tab-add btn-hover" onclick={addTab}>+ Netz</button>
     </div>
   </header>
 
@@ -1438,7 +1447,7 @@
         Aktivierung
         <select
           value={activeTab.activation}
-          on:change={(e) => setActiveActivation(e.currentTarget.value)}
+          onchange={(e) => setActiveActivation(e.currentTarget.value)}
         >
           {#each availableActivations as act}
             <option value={act}>{act}</option>
@@ -1453,7 +1462,7 @@
           min="0.001"
           step="0.001"
           value={activeTab.learningRate}
-          on:input={(e) => setActiveLearningRate(e.currentTarget.value)}
+          oninput={(e) => setActiveLearningRate(e.currentTarget.value)}
         />
       </label>
     </div>
@@ -1461,7 +1470,7 @@
     <div class="toolbar-group">
       <button
         class="btn-hover"
-        on:click={openDatasetModal}
+        onclick={openDatasetModal}
         disabled={isTraining}
       >
         <img
@@ -1475,7 +1484,7 @@
       <hr />
       <button
         class="btn-hover"
-        on:click={randomizeActiveState}
+        onclick={randomizeActiveState}
         disabled={busy || isTraining}
       >
         <img src="/shuffle-solid-full.svg" alt="" width="16" height="16" />
@@ -1484,7 +1493,7 @@
 
       <button
         class="btn-hover {isTraining ? 'btn-is-training' : ''}"
-        on:click={handleTrainingButtonClick}
+        onclick={handleTrainingButtonClick}
         disabled={busy}
       >
         {#if isTraining}
@@ -1565,19 +1574,17 @@
             step="1"
             value={count}
             disabled={isTraining}
-            on:input={(e) => setLayerCount(layerIndex, e.currentTarget.value)}
+            oninput={(e) => setLayerCount(layerIndex, e.currentTarget.value)}
           />
         </label>
       {/each}
       <div class="layer-buttons">
-        <button
-          class="btn-hover"
-          on:click={addHiddenLayer}
-          disabled={isTraining}>Hidden Layer +</button
+        <button class="btn-hover" onclick={addHiddenLayer} disabled={isTraining}
+          >Hidden Layer +</button
         >
         <button
           class="btn-hover"
-          on:click={removeHiddenLayer}
+          onclick={removeHiddenLayer}
           disabled={isTraining || activeTab.layers.length <= 2}
           >Hidden Layer -</button
         >
@@ -1617,7 +1624,7 @@
         {onDatasetFileSelected}
         {startTrainingWindowDrag}
         {startTrainingWindowResize}
-        {datasetModalOpen}
+        bind:datasetModalOpen
       />
     </div>
   {/if}
@@ -1627,20 +1634,20 @@
       <div class="modal-window import-modal" role="dialog" aria-modal="true">
         <div class="modal-head">
           <div class="modal-title">CSV-Import</div>
-          <button on:click={closeDatasetImportPrompt}>X</button>
+          <button onclick={closeDatasetImportPrompt}>X</button>
         </div>
 
         <p>Hat die CSV einen Header?</p>
         <p class="csv-first-line">Erste Zeile: {pendingImportFirstLine}</p>
 
         <div class="import-actions">
-          <button class="btn-hover" on:click={() => importDatasetCsv(true)}
+          <button class="btn-hover" onclick={() => importDatasetCsv(true)}
             >Mit Header importieren</button
           >
-          <button class="btn-hover" on:click={() => importDatasetCsv(false)}
+          <button class="btn-hover" onclick={() => importDatasetCsv(false)}
             >Ohne Header importieren</button
           >
-          <button class="btn-hover" on:click={closeDatasetImportPrompt}
+          <button class="btn-hover" onclick={closeDatasetImportPrompt}
             >Abbrechen</button
           >
         </div>
