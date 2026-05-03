@@ -1561,6 +1561,20 @@
       Knoten in Hidden/Output, um Bias zu aendern.
     </p>
     <div class="layer-controls">
+      <div class="layer-buttons">
+        <span>Hidden Layer:</span>
+
+        <button
+          class="btn-hover"
+          onclick={removeHiddenLayer}
+          disabled={isTraining || activeTab.layers.length <= 2}
+        >
+          -</button
+        >
+        <button class="btn-hover" onclick={addHiddenLayer} disabled={isTraining}
+          >+</button
+        >
+      </div>
       {#each activeTab.layers as count, layerIndex}
         <label>
           {layerIndex === 0
@@ -1578,17 +1592,6 @@
           />
         </label>
       {/each}
-      <div class="layer-buttons">
-        <button class="btn-hover" onclick={addHiddenLayer} disabled={isTraining}
-          >Hidden Layer +</button
-        >
-        <button
-          class="btn-hover"
-          onclick={removeHiddenLayer}
-          disabled={isTraining || activeTab.layers.length <= 2}
-          >Hidden Layer -</button
-        >
-      </div>
     </div>
     <div class="graph-scroll">
       <NetworkGraph
@@ -1655,3 +1658,35 @@
     </div>
   {/if}
 </main>
+
+<style>
+  .layer-buttons {
+    display: flex;
+    align-items: center;
+    border-radius: 10px;
+    height: 40px;
+  }
+
+  .layer-buttons > span {
+    background-color: lightgray;
+    height: 100%;
+    align-content: center;
+    padding-left: 5px;
+    padding-right: 5px;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+  }
+
+  .layer-buttons > button {
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    font-size: 20px;
+  }
+
+  .layer-buttons > button:last-child {
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
+  }
+</style>

@@ -264,12 +264,7 @@ button:disabled {
   gap: 0.7rem;
   flex-wrap: wrap;
   margin-bottom: 0.5rem;
-}
-
-.layer-buttons {
-  display: flex;
-  align-items: end;
-  gap: 0.5rem;
+  align-items: center;
 }
 
 .graph-scroll {
