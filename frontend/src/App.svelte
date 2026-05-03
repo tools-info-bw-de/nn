@@ -1,5 +1,8 @@
 <script>
   import { onMount } from "svelte";
+  import FehlerwertChart from "./lib/FehlerwertChart.svelte";
+  import NetworkGraph from "./lib/NetworkGraph.svelte";
+  import TrainingsModal from "./lib/TrainingsModal.svelte";
 
   const defaultDataset = JSON.stringify(
     [
@@ -28,10 +31,20 @@
   let renamingTabId = "";
   let renameDraft = "";
 
-  let lossWindowOpen = false;
-  let lossWindowPosition = { x: 110, y: 90 };
-  let lossWindowDragging = false;
-  let lossWindowDragOffset = { x: 0, y: 0 };
+  let trainingWindowPosition = { x: 250, y: 150 };
+  let trainingWindowSize = { width: 960, height: 520 };
+  let trainingWindowDragging = false;
+  let trainingWindowDragOffset = { x: 0, y: 0 };
+  let trainingWindowResizing = false;
+  let trainingWindowResizeDir = "";
+  let trainingWindowResizeStart = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    left: 0,
+    top: 0,
+  };
 
   let datasetModalOpen = false;
   let datasetImportPromptOpen = false;
@@ -276,6 +289,16 @@
       normalizeDatasetRows(tab);
     });
     datasetModalOpen = true;
+    const maxWidth = Math.max(540, window.innerWidth - 20);
+    const maxHeight = Math.max(320, window.innerHeight - 20);
+    trainingWindowSize = {
+      width: Math.min(trainingWindowSize.width, maxWidth),
+      height: Math.min(trainingWindowSize.height, maxHeight),
+    };
+    trainingWindowPosition = {
+      x: Math.min(trainingWindowPosition.x, Math.max(10, maxWidth - 100)),
+      y: Math.min(trainingWindowPosition.y, Math.max(10, maxHeight - 100)),
+    };
   }
 
   function addDatasetRow() {
@@ -828,7 +851,6 @@
           ? Number(trainingLossHistoryBase[trainingLossHistoryBase.length - 1])
           : null;
       trainingDeviation = null;
-      lossWindowOpen = true;
       status = `${active.name}: Training gestartet.`;
 
       updateTab(active.id, (next) => {
@@ -1166,36 +1188,106 @@
   })();
   $: hasLoss = activeTab?.lossHistory?.length > 0;
 
-  function startLossWindowDrag(event) {
+  function startTrainingWindowDrag(event) {
+    if (event.target?.closest("button")) {
+      return;
+    }
+
     if (event.button !== 0) {
       return;
     }
 
-    lossWindowDragging = true;
-    lossWindowDragOffset = {
-      x: event.clientX - lossWindowPosition.x,
-      y: event.clientY - lossWindowPosition.y,
+    event.preventDefault();
+    trainingWindowDragging = true;
+    trainingWindowDragOffset = {
+      x: event.clientX - trainingWindowPosition.x,
+      y: event.clientY - trainingWindowPosition.y,
+    };
+  }
+
+  function startTrainingWindowResize(event, direction) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    trainingWindowResizing = true;
+    trainingWindowResizeDir = direction;
+    trainingWindowResizeStart = {
+      x: event.clientX,
+      y: event.clientY,
+      width: trainingWindowSize.width,
+      height: trainingWindowSize.height,
+      left: trainingWindowPosition.x,
+      top: trainingWindowPosition.y,
     };
   }
 
   function onGlobalMouseMove(event) {
-    if (!lossWindowDragging) {
+    if (trainingWindowResizing) {
+      const minWidth = 540;
+      const minHeight = 320;
+      const maxWidth = Math.max(minWidth, window.innerWidth - 20);
+      const maxHeight = Math.max(minHeight, window.innerHeight - 20);
+      const dx = event.clientX - trainingWindowResizeStart.x;
+      const dy = event.clientY - trainingWindowResizeStart.y;
+
+      let nextLeft = trainingWindowResizeStart.left;
+      let nextTop = trainingWindowResizeStart.top;
+      let nextWidth = trainingWindowResizeStart.width;
+      let nextHeight = trainingWindowResizeStart.height;
+
+      if (trainingWindowResizeDir.includes("e")) {
+        nextWidth = Math.min(
+          Math.max(minWidth, trainingWindowResizeStart.width + dx),
+          window.innerWidth - trainingWindowResizeStart.left - 10,
+        );
+      }
+      if (trainingWindowResizeDir.includes("s")) {
+        nextHeight = Math.min(
+          Math.max(minHeight, trainingWindowResizeStart.height + dy),
+          window.innerHeight - trainingWindowResizeStart.top - 10,
+        );
+      }
+
+      trainingWindowSize = {
+        width: Math.min(Math.max(minWidth, nextWidth), maxWidth),
+        height: Math.min(Math.max(minHeight, nextHeight), maxHeight),
+      };
+
+      trainingWindowPosition = {
+        x: Math.max(10, Math.min(nextLeft, window.innerWidth - 10 - minWidth)),
+        y: Math.max(10, Math.min(nextTop, window.innerHeight - 10 - minHeight)),
+      };
       return;
     }
 
-    const nextX = event.clientX - lossWindowDragOffset.x;
-    const nextY = event.clientY - lossWindowDragOffset.y;
-    const maxX = Math.max(10, window.innerWidth - 280);
-    const maxY = Math.max(10, window.innerHeight - 180);
+    if (!trainingWindowDragging) {
+      return;
+    }
 
-    lossWindowPosition = {
+    const nextX = event.clientX - trainingWindowDragOffset.x;
+    const nextY = event.clientY - trainingWindowDragOffset.y;
+    const maxX = Math.max(
+      10,
+      window.innerWidth - trainingWindowSize.width - 10,
+    );
+    const maxY = Math.max(
+      10,
+      window.innerHeight - trainingWindowSize.height - 10,
+    );
+
+    trainingWindowPosition = {
       x: Math.min(Math.max(10, nextX), maxX),
       y: Math.min(Math.max(10, nextY), maxY),
     };
   }
 
   function onGlobalMouseUp() {
-    lossWindowDragging = false;
+    trainingWindowDragging = false;
+    trainingWindowResizing = false;
+    trainingWindowResizeDir = "";
   }
 
   $: lossChart = (() => {
@@ -1449,77 +1541,7 @@
     </div>
 
     <div>
-      <svg
-        viewBox={`0 0 ${lossChart.width} ${lossChart.height}`}
-        class="loss-chart"
-        role="img"
-        aria-label="Loss Verlauf mit Skalen"
-      >
-        <line
-          class="loss-axis"
-          x1={lossChart.yAxisX}
-          y1={lossChart.yAxisTop}
-          x2={lossChart.yAxisX}
-          y2={lossChart.xAxisY}
-        ></line>
-        <line
-          class="loss-axis"
-          x1={lossChart.yAxisX}
-          y1={lossChart.xAxisY}
-          x2={lossChart.yAxisX + lossChart.plotWidth}
-          y2={lossChart.xAxisY}
-        ></line>
-
-        {#each lossChart.yTicks as tick}
-          <line
-            class="loss-grid"
-            x1={lossChart.yAxisX}
-            y1={tick.y}
-            x2={lossChart.yAxisX + lossChart.plotWidth}
-            y2={tick.y}
-          ></line>
-          <text
-            class="loss-tick loss-tick-y"
-            x={lossChart.yAxisX - 6}
-            y={tick.y + 3}>{tick.label}</text
-          >
-        {/each}
-
-        {#each lossChart.xTicks as tick}
-          <line
-            class="loss-tick-mark"
-            x1={tick.x}
-            y1={lossChart.xAxisY}
-            x2={tick.x}
-            y2={lossChart.xAxisY + 4}
-          ></line>
-          <text
-            class="loss-tick loss-tick-x"
-            x={tick.x}
-            y={lossChart.xAxisY + 16}>{tick.epoch}</text
-          >
-        {/each}
-
-        {#if lossChart.hasLine}
-          <polyline
-            points={lossChart.linePoints}
-            fill="none"
-            stroke="var(--accent)"
-            stroke-width="2.5"
-          ></polyline>
-        {/if}
-
-        <text
-          class="loss-axis-label"
-          x={lossChart.yAxisX + lossChart.plotWidth / 2}
-          y={lossChart.height - 4}
-        >
-          Epoche
-        </text>
-        <text class="loss-axis-label" x="55" y={lossChart.yAxisTop - 15}
-          >Fehlerwert</text
-        >
-      </svg>
+      <FehlerwertChart {lossChart} />
     </div>
   </section>
 
@@ -1562,123 +1584,15 @@
       </div>
     </div>
     <div class="graph-scroll">
-      <svg
-        class="network-graph"
-        viewBox={`0 0 ${graph.width} ${graph.height}`}
-        role="img"
-        aria-label="Netzwerkvisualisierung"
-      >
-        {#each orderedConnections as conn (conn.id)}
-          <g>
-            <line
-              class="edge-hit"
-              x1={conn.x1}
-              y1={conn.y1}
-              x2={conn.x2}
-              y2={conn.y2}
-              role="button"
-              tabindex="0"
-              on:pointerenter={() => {
-                highlightedConnectionId = conn.id;
-              }}
-              on:pointerleave={() => {
-                if (highlightedConnectionId === conn.id) {
-                  highlightedConnectionId = "";
-                }
-              }}
-              on:focus={() => {
-                highlightedConnectionId = conn.id;
-              }}
-              on:click={() => editWeight(conn)}
-              on:keydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  editWeight(conn);
-                }
-              }}
-            ></line>
-            <line
-              class={`edge ${conn.weight >= 0 ? "pos" : "neg"}`}
-              x1={conn.x1}
-              y1={conn.y1}
-              x2={conn.x2}
-              y2={conn.y2}
-              stroke-width={Math.min(3, 0.8 + Math.abs(conn.weight) * 0.45)}
-            ></line>
-            <text
-              class={`edge-value ${highlightedConnectionId === conn.id ? "edge-value-active" : ""}`}
-              x={conn.labelX}
-              y={conn.labelY}
-              role="button"
-              tabindex="0"
-              on:click={() => editWeight(conn)}
-              on:keydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  editWeight(conn);
-                }
-              }}
-            >
-              {Number(conn.weight).toFixed(2)}
-            </text>
-          </g>
-        {/each}
-
-        {#each graph.nodes as node}
-          <g>
-            {#if node.layer === 0}
-              <circle class="node input" cx={node.x} cy={node.y} r="16"
-              ></circle>
-              <foreignObject
-                class="node-input-wrap"
-                x={Math.max(8, node.x - 70)}
-                y={node.y - 13}
-                width="50"
-                height="22"
-              >
-                <input
-                  class="node-input"
-                  type="number"
-                  value={activeTab.inputNeuronValues?.[node.node] ?? "0"}
-                  on:input={(e) =>
-                    setInputNeuronValue(node.node, e.currentTarget.value)}
-                />
-              </foreignObject>
-            {:else}
-              <circle
-                class="node editable"
-                cx={node.x}
-                cy={node.y}
-                r="16"
-                role="button"
-                tabindex="0"
-                on:click={() => editBias(node.layer, node.node)}
-                on:keydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    editBias(node.layer, node.node);
-                  }
-                }}
-              ></circle>
-            {/if}
-            <text class="node-index" x={node.x} y={node.y + 4}
-              >N{node.node + 1}</text
-            >
-            {#if node.layer > 0 && activeTab.state}
-              <text class="node-bias" x={node.x} y={node.y + 28}>
-                b:{Number(
-                  activeTab.state.biases[node.layer - 1][node.node],
-                ).toFixed(2)}
-              </text>
-            {/if}
-            {#if node.layer === activeTab.layers.length - 1}
-              <text class="node-output" x={node.x + 24} y={node.y + 4}>
-                {activeTab.outputNeuronValues?.[node.node] ?? "-"}
-              </text>
-            {/if}
-          </g>
-        {/each}
-      </svg>
+      <NetworkGraph
+        {graph}
+        {orderedConnections}
+        {highlightedConnectionId}
+        {activeTab}
+        {setInputNeuronValue}
+        {editWeight}
+        {editBias}
+      />
     </div>
   </section>
 
@@ -1691,92 +1605,20 @@
 
   {#if datasetModalOpen}
     <div class="modal-backdrop">
-      <div class="modal-window dataset-modal" role="dialog" aria-modal="true">
-        <div class="modal-head">
-          <div class="modal-title">Trainingsdaten bearbeiten</div>
-          <button on:click={() => (datasetModalOpen = false)}>X</button>
-        </div>
-
-        <div class="dataset-actions">
-          <button class="btn-hover" on:click={addDatasetRow}>+ Zeile</button>
-          <button class="btn-hover" on:click={exportDatasetCsv}
-            >CSV speichern</button
-          >
-          <label class="btn-file btn-hover">
-            CSV laden
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              on:change={onDatasetFileSelected}
-            />
-          </label>
-        </div>
-
-        <div class="dataset-grid-wrap">
-          <table class="dataset-grid">
-            <thead>
-              <tr>
-                <th colspan={activeTab.layers[0]}>Inputs</th>
-                <th colspan={activeTab.layers[activeTab.layers.length - 1]}
-                  >Outputs</th
-                >
-                <th>Aktion</th>
-              </tr>
-              <tr>
-                {#each Array.from({ length: activeTab.layers[0] }, (_, idx) => idx) as idx}
-                  <th>I{idx + 1}</th>
-                {/each}
-                {#each Array.from({ length: activeTab.layers[activeTab.layers.length - 1] }, (_, idx) => idx) as idx}
-                  <th>O{idx + 1}</th>
-                {/each}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each activeTab.datasetRows as row, rowIndex}
-                <tr>
-                  {#each row.input as value, inputIndex}
-                    <td>
-                      <input
-                        type="number"
-                        {value}
-                        on:input={(e) =>
-                          setDatasetRowInput(
-                            rowIndex,
-                            inputIndex,
-                            e.currentTarget.value,
-                          )}
-                      />
-                    </td>
-                  {/each}
-                  {#each row.target as value, outputIndex}
-                    <td>
-                      <input
-                        type="number"
-                        {value}
-                        on:input={(e) =>
-                          setDatasetRowOutput(
-                            rowIndex,
-                            outputIndex,
-                            e.currentTarget.value,
-                          )}
-                      />
-                    </td>
-                  {/each}
-                  <td>
-                    <button
-                      class="btn-hover"
-                      on:click={() => removeDatasetRow(rowIndex)}
-                      disabled={activeTab.datasetRows.length <= 1}
-                      >Loeschen</button
-                    >
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <TrainingsModal
+        {activeTab}
+        {trainingWindowPosition}
+        {trainingWindowSize}
+        {setDatasetRowInput}
+        {setDatasetRowOutput}
+        {addDatasetRow}
+        {removeDatasetRow}
+        {exportDatasetCsv}
+        {onDatasetFileSelected}
+        {startTrainingWindowDrag}
+        {startTrainingWindowResize}
+        {datasetModalOpen}
+      />
     </div>
   {/if}
 

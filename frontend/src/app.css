@@ -290,101 +290,6 @@ button:disabled {
   opacity: 0.8;
 }
 
-.edge {
-  opacity: 0.65;
-  pointer-events: none;
-}
-
-.edge-hit {
-  stroke: transparent;
-  stroke-width: 8;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-
-.edge.pos {
-  stroke: #1f8f6a;
-}
-
-.edge.neg {
-  stroke: #bf5d43;
-}
-
-.edge-value {
-  font-size: 10px;
-  fill: #111827;
-  paint-order: stroke;
-  stroke: #f8fafc;
-  stroke-width: 2px;
-  cursor: pointer;
-}
-
-.edge-value-active {
-  fill: #fffab6;
-  font-weight: 700;
-  stroke: #ff5a5a;
-  stroke-width: 3px;
-}
-
-.node {
-  stroke-width: 2;
-}
-
-.node.input {
-  fill: #dbeafe;
-  stroke: #3b82f6;
-}
-
-.node.editable {
-  fill: #dcfce7;
-  stroke: #22a362;
-  cursor: pointer;
-}
-
-.node-index {
-  text-anchor: middle;
-  font-size: 10px;
-  fill: #111827;
-}
-
-.node-bias {
-  text-anchor: middle;
-  font-size: 9px;
-  fill: #475569;
-}
-
-.node-input-wrap {
-  overflow: visible;
-}
-
-.node-input {
-  width: 100%;
-  height: 100%;
-  border: 1px solid #93b2eb;
-  border-radius: 6px;
-  background: rgba(248, 251, 255, 0.97);
-  text-align: center;
-  padding: 0.08rem 0.2rem;
-  font-size: 11px;
-}
-
-.node-input::-webkit-outer-spin-button,
-.node-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0; /* <-- Apparently some margin are still there even though it's hidden */
-}
-
-.node-input[type="number"] {
-  appearance: textfield; /* Safari, Chrome, Edge */
-  -moz-appearance: textfield; /* Firefox */
-}
-
-.node-output {
-  font-size: 10px;
-  fill: #0f766e;
-  font-weight: 600;
-}
-
 .status {
   font-size: 0.84rem;
 }
@@ -438,49 +343,6 @@ button:disabled {
   user-select: none;
 }
 
-.loss-chart {
-  width: 100%;
-  min-height: 180px;
-  border-radius: 10px;
-  background: rgba(0, 109, 119, 0.06);
-  border: 1px solid var(--line);
-}
-
-.loss-axis {
-  stroke: #0f172a;
-  stroke-width: 1;
-}
-
-.loss-grid {
-  stroke: rgba(15, 23, 42, 0.12);
-  stroke-width: 1;
-}
-
-.loss-tick-mark {
-  stroke: #0f172a;
-  stroke-width: 1;
-}
-
-.loss-tick {
-  fill: #334155;
-  font-size: 12px;
-}
-
-.loss-tick-y {
-  text-anchor: end;
-}
-
-.loss-tick-x {
-  text-anchor: middle;
-}
-
-.loss-axis-label {
-  fill: #0f172a;
-  font-size: 13px;
-  font-weight: 600;
-  text-anchor: middle;
-}
-
 .loader {
   width: 16px;
   height: 16px;
@@ -532,12 +394,40 @@ button:disabled {
 }
 
 .dataset-modal {
-  width: min(980px, 96vw);
-  max-height: 88vh;
+  min-width: 540px;
+  min-height: 320px;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 20px);
   overflow: auto;
 }
 
-.dataset-actions {
+.resizable-window {
+  position: fixed;
+}
+
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  border: 0;
+  border-radius: 5px;
+  margin: 0;
+  padding: 0;
+  background: lightgrey;
+}
+
+.resize-se {
+  width: 18px;
+  height: 18px;
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.outputs-header {
+  border-left: 1px solid var(--line);
+}
+
+tdata .dataset-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
