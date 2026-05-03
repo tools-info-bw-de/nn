@@ -16,6 +16,7 @@
   );
 
   const defaultInputValues = [1, 0];
+  const publicAsset = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 
   let wasmReady = false;
   let busy = $state(false);
@@ -111,7 +112,7 @@
       };
 
       worker.onerror = (event) => {
-        const err = new Error(event.message || "WASM-Worker abgestuerzt.");
+        const err = new Error(event.message || "WASM-Worker abgestürzt.");
         reject(err);
       };
 
@@ -125,7 +126,7 @@
     await initWorker();
 
     if (!nnWorker) {
-      throw new Error("WASM-Worker nicht verfuegbar.");
+      throw new Error("WASM-Worker nicht verfügbar.");
     }
 
     const requestId = ++nnWorkerRequestId;
@@ -630,7 +631,7 @@
   function assertLoadedNetworkShape(network) {
     const layers = Array.isArray(network?.layers) ? network.layers : null;
     if (!layers || layers.length < 2) {
-      throw new Error("Import abgebrochen: layers fehlt oder ist ungueltig.");
+      throw new Error("Import abgebrochen: layers fehlt oder ist ungültig.");
     }
 
     if (!layers.every((n) => Number.isInteger(n) && n > 0)) {
@@ -1175,7 +1176,7 @@
       const dataset = currentDatasetRows(active);
       if (!Array.isArray(dataset) || dataset.length === 0) {
         throw new Error(
-          "Trainingsdaten muessen ein nicht-leeres JSON-Array sein.",
+          "Trainingsdaten müssen ein nicht-leeres JSON-Array sein.",
         );
       }
 
@@ -1595,7 +1596,7 @@
 
       if (isTraining) {
         throw new Error(
-          "Gewichte koennen waehrend des Trainings nicht manuell geaendert werden.",
+          "Gewichte können während des Trainings nicht manuell geändert werden.",
         );
       }
 
@@ -1612,7 +1613,7 @@
       }
       const num = Number(value);
       if (!Number.isFinite(num)) {
-        throw new Error("Ungueltiger Zahlenwert für Gewicht.");
+        throw new Error("Ungültiger Zahlenwert für Gewicht.");
       }
 
       updateActiveTab((next) => {
@@ -1630,7 +1631,7 @@
     return withBusy(async () => {
       if (isTraining) {
         throw new Error(
-          "Bias-Werte koennen waehrend des Trainings nicht manuell geaendert werden.",
+          "Bias-Werte können während des Trainings nicht manuell geändert werden.",
         );
       }
 
@@ -1648,7 +1649,7 @@
       }
       const num = Number(value);
       if (!Number.isFinite(num)) {
-        throw new Error("Ungueltiger Zahlenwert fuer Bias.");
+        throw new Error("Ungültiger Zahlenwert für Bias.");
       }
 
       updateActiveTab((next) => {
@@ -1960,7 +1961,7 @@
             <div
               class="activation-preview-popover"
               role="listbox"
-              aria-label="Aktivierungsfunktion auswaehlen"
+              aria-label="Aktivierungsfunktion auswählen"
             >
               {#each activationPreviews as item}
                 <button
@@ -2022,7 +2023,7 @@
         disabled={isTraining}
       >
         <img
-          src="/person-chalkboard-solid-full.svg"
+          src={publicAsset("person-chalkboard-solid-full.svg")}
           alt=""
           width="16"
           height="16"
@@ -2035,7 +2036,12 @@
         onclick={randomizeActiveState}
         disabled={busy || isTraining}
       >
-        <img src="/dice-solid-full.svg" alt="" width="16" height="16" />
+        <img
+          src={publicAsset("dice-solid-full.svg")}
+          alt=""
+          width="16"
+          height="16"
+        />
         <span>Netz randomisieren</span>
       </button>
 
@@ -2045,10 +2051,20 @@
         disabled={busy}
       >
         {#if isTraining}
-          <img src="/stop-solid-full.svg" alt="" width="16" height="16" />
+          <img
+            src={publicAsset("stop-solid-full.svg")}
+            alt=""
+            width="16"
+            height="16"
+          />
           <span>Abbrechen</span>
         {:else}
-          <img src="/play-solid-full.svg" alt="" width="16" height="16" />
+          <img
+            src={publicAsset("play-solid-full.svg")}
+            alt=""
+            width="16"
+            height="16"
+          />
           <span
             >Training
             {activeTab.epochs > 0 ? "fortsetzen" : "starten"}
@@ -2107,7 +2123,7 @@
     <h2>Live-Netzansicht (Klicken zum Bearbeiten)</h2>
     <p class="hint">
       Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf den
-      Bias-Wert, um Bias zu aendern.
+      Bias-Wert, um Bias zu ändern.
     </p>
     <div class="layer-controls">
       <div class="button-group">
@@ -2159,7 +2175,7 @@
           disabled={isTraining}
         >
           <img
-            src="/floppy-disk-solid-full.svg"
+            src={publicAsset("floppy-disk-solid-full.svg")}
             alt=""
             width="20"
             height="20"
@@ -2171,7 +2187,12 @@
           onclick={triggerImportNetwork}
           disabled={isTraining}
         >
-          <img src="/upload-solid-full.svg" alt="" width="20" height="20" />
+          <img
+            src={publicAsset("upload-solid-full.svg")}
+            alt=""
+            width="20"
+            height="20"
+          />
           Öffnen</button
         >
       </div>

@@ -1,4 +1,6 @@
 <script>
+  const publicAsset = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
+
   let {
     activeTab,
     trainingWindowPosition,
@@ -55,11 +57,21 @@
       <span>Trainingsdaten:</span>
 
       <button class="btn-hover" onclick={exportDatasetCsv}>
-        <img src="/floppy-disk-solid-full.svg" alt="" width="20" height="20" />
+        <img
+          src={publicAsset("floppy-disk-solid-full.svg")}
+          alt=""
+          width="20"
+          height="20"
+        />
         Speichern</button
       >
       <label class="btn-file btn-hover">
-        <img src="/upload-solid-full.svg" alt="" width="20" height="20" />
+        <img
+          src={publicAsset("upload-solid-full.svg")}
+          alt=""
+          width="20"
+          height="20"
+        />
         Öffnen
         <input
           type="file"
@@ -196,7 +208,7 @@
                 disabled={activeTab.datasetRows.length <= 1}
                 tabIndex="-1"
                 ><img
-                  src="/trash-solid-full.svg"
+                  src={publicAsset("trash-solid-full.svg")}
                   alt=""
                   width="16"
                   height="16"

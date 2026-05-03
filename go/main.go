@@ -171,7 +171,7 @@ func networkFromState(state NetworkState) (*Network, error) {
 	}
 
 	if len(state.Activations) != len(state.Layers)-1 {
-		return nil, fmt.Errorf("state.activations muss genau %d Eintraege haben", len(state.Layers)-1)
+		return nil, fmt.Errorf("state.activations muss genau %d Einträge haben", len(state.Layers)-1)
 	}
 
 	acts := make([]Activation, len(state.Activations))
@@ -198,12 +198,12 @@ func networkFromState(state NetworkState) (*Network, error) {
 			return nil, fmt.Errorf("state.weights[%d] hat %d Neuronen statt %d", layer, len(state.Weights[layer]), outSize)
 		}
 		if len(state.Biases[layer]) != outSize {
-			return nil, fmt.Errorf("state.biases[%d] hat %d Eintraege statt %d", layer, len(state.Biases[layer]), outSize)
+			return nil, fmt.Errorf("state.biases[%d] hat %d Einträge statt %d", layer, len(state.Biases[layer]), outSize)
 		}
 		for node := 0; node < outSize; node++ {
 			if len(state.Weights[layer][node]) != inSize {
 				return nil, fmt.Errorf(
-					"state.weights[%d][%d] hat %d Eintraege statt %d",
+					"state.weights[%d][%d] hat %d Einträge statt %d",
 					layer,
 					node,
 					len(state.Weights[layer][node]),
@@ -264,7 +264,7 @@ func activate(act Activation, x float64) float64 {
 func derivative(act Activation, x float64, activated float64) float64 {
 	switch act {
 	case ActivationBinary:
-		// Straight-through Schaetzer fuer binaere Aktivierung.
+		// Straight-through Schätzer für binäre Aktivierung.
 		if math.Abs(x) <= 1 {
 			return 1
 		}
@@ -293,7 +293,7 @@ func newNetwork(cfg NetworkConfig) (*Network, error) {
 	}
 
 	if len(cfg.Activations) != len(cfg.Layers)-1 {
-		return nil, fmt.Errorf("activations muss genau %d Eintraege haben", len(cfg.Layers)-1)
+		return nil, fmt.Errorf("activations muss genau %d Einträge haben", len(cfg.Layers)-1)
 	}
 
 	acts := make([]Activation, len(cfg.Activations))
@@ -357,7 +357,7 @@ func newNetwork(cfg NetworkConfig) (*Network, error) {
 
 func (n *Network) forwardWithCache(input []float64) ([][]float64, [][]float64, error) {
 	if len(input) != len(n.weights[0][0]) {
-		return nil, nil, fmt.Errorf("input-Groesse %d passt nicht zur Eingabeschicht %d", len(input), len(n.weights[0][0]))
+		return nil, nil, fmt.Errorf("input-Größe %d passt nicht zur Eingabeschicht %d", len(input), len(n.weights[0][0]))
 	}
 
 	activations := make([][]float64, len(n.weights)+1)
@@ -416,10 +416,10 @@ func (n *Network) Train(dataset []Sample, epochs int, lrOverride *float64, shuff
 
 	for idx, sample := range dataset {
 		if len(sample.Input) != inputSize {
-			return TrainResponse{}, fmt.Errorf("dataset[%d].input hat Groesse %d statt %d", idx, len(sample.Input), inputSize)
+			return TrainResponse{}, fmt.Errorf("dataset[%d].input hat Größe %d statt %d", idx, len(sample.Input), inputSize)
 		}
 		if len(sample.Target) != outputSize {
-			return TrainResponse{}, fmt.Errorf("dataset[%d].target hat Groesse %d statt %d", idx, len(sample.Target), outputSize)
+			return TrainResponse{}, fmt.Errorf("dataset[%d].target hat Größe %d statt %d", idx, len(sample.Target), outputSize)
 		}
 	}
 

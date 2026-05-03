@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # build wasm
 cd go && GOOS=js GOARCH=wasm go build -o nn.wasm
 

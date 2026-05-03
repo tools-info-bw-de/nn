@@ -3,13 +3,13 @@
 Dieses Projekt kompiliert nach WebAssembly und stellt eine stateless API bereit.
 
 Wichtig: Das WASM speichert keine Netzinstanzen dauerhaft.
-Bei Training und Inferenz wird immer der komplette Netz-Zustand (Gewichte, Biases, Layer) als JSON uebergeben.
+Bei Training und Inferenz wird immer der komplette Netz-Zustand (Gewichte, Biases, Layer) als JSON übergeben.
 
 ## Features
 
-- Feedforward-Netz mit frei waehlbarer Schichtstruktur
+- Feedforward-Netz mit frei wählbarer Schichtstruktur
 - Aktivierungen: binary, logistic (sigmoid), relu
-- Stateless API fuer:
+- Stateless API für:
   - initiales Erzeugen eines Zustands
   - Training (Backprop + SGD)
   - Forward-Pass
@@ -23,7 +23,7 @@ GOOS=js GOARCH=wasm go build -o nn.wasm .
 
 ## JavaScript API
 
-Alle Funktionen erwarten JSON-Strings und liefern JSON-Strings zurueck.
+Alle Funktionen erwarten JSON-Strings und liefern JSON-Strings zurück.
 
 - nnCreateState(configJson)
 - nnTrain(requestJson)
@@ -32,7 +32,7 @@ Alle Funktionen erwarten JSON-Strings und liefern JSON-Strings zurueck.
 
 ### 1) Zustand erzeugen
 
-Request fuer nnCreateState:
+Request für nnCreateState:
 
 ```json
 {
@@ -58,7 +58,7 @@ Antwort:
 
 ### 2) Trainieren
 
-Request fuer nnTrain:
+Request für nnTrain:
 
 ```json
 {
@@ -87,11 +87,11 @@ Request fuer nnTrain:
 }
 ```
 
-Antwort enthaelt den aktualisierten state und loss_history.
+Antwort enthält den aktualisierten state und loss_history.
 
 ### 3) Inferenz
 
-Request fuer nnForward:
+Request für nnForward:
 
 ```json
 {

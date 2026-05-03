@@ -4,6 +4,9 @@ let runtimeReady = false;
 let runtimeReadyPromise = null;
 let trainerCounter = 0;
 const trainers = new Map();
+const baseUrl = import.meta.env.BASE_URL || "/";
+const wasmExecUrl = `${baseUrl}wasm_exec.js`;
+const wasmBinaryUrl = `${baseUrl}nn.wasm`;
 
 function makeTrainerId() {
   trainerCounter += 1;
@@ -40,10 +43,10 @@ async function initRuntime() {
   }
 
   runtimeReadyPromise = (async () => {
-    importScripts("/wasm_exec.js");
+    importScripts(wasmExecUrl);
 
     if (typeof Go !== "function") {
-      throw new Error("Go Runtime in wasm_exec.js nicht verfuegbar.");
+      throw new Error("Go Runtime in wasm_exec.js nicht verfügbar.");
     }
 
     const go = new Go();
@@ -51,12 +54,12 @@ async function initRuntime() {
 
     try {
       const result = await WebAssembly.instantiateStreaming(
-        fetch("/nn.wasm"),
+        fetch(wasmBinaryUrl),
         go.importObject,
       );
       instance = result.instance;
     } catch {
-      const response = await fetch("/nn.wasm");
+      const response = await fetch(wasmBinaryUrl);
       if (!response.ok) {
         throw new Error(
           `nn.wasm konnte nicht geladen werden (HTTP ${response.status}).`,
