@@ -72,6 +72,7 @@
   let nnWorkerReadyPromise = null;
   let nnWorkerRequestId = 0;
   const nnWorkerPending = new Map();
+  let networkImportInputEl = null;
 
   function initWorker() {
     if (nnWorkerReadyPromise) {
@@ -578,6 +579,146 @@
     a.download = `${active.name.replace(/\s+/g, "_")}_trainingsdaten.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportCurrentNetwork() {
+    const active = getActiveTab();
+    const state = active.state
+      ? clone(active.state)
+      : buildPlaceholderState(active);
+    const inputCount = active.layers[0] ?? 0;
+    const outputCount = active.layers[active.layers.length - 1] ?? 0;
+
+    const payload = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      name: active.name,
+      training_epochs: trainingEpochsDone,
+      network: {
+        layers: clone(active.layers),
+        activation: active.activation,
+        learning_rate: Number(active.learningRate),
+        input_names: Array.from({ length: inputCount }, (_, idx) =>
+          String(active.inputNeuronNames?.[idx] ?? `input${idx + 1}`),
+        ),
+        output_names: Array.from({ length: outputCount }, (_, idx) =>
+          String(active.outputNeuronNames?.[idx] ?? `output${idx + 1}`),
+        ),
+        input_values: Array.from({ length: inputCount }, (_, idx) =>
+          String(active.inputNeuronValues?.[idx] ?? "0"),
+        ),
+        output_values: Array.from({ length: outputCount }, (_, idx) =>
+          String(active.outputNeuronValues?.[idx] ?? "-"),
+        ),
+        state,
+      },
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${active.name.replace(/\s+/g, "_")}_netz.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function triggerImportNetwork() {
+    networkImportInputEl?.click();
+  }
+
+  function assertLoadedNetworkShape(network) {
+    const layers = Array.isArray(network?.layers) ? network.layers : null;
+    if (!layers || layers.length < 2) {
+      throw new Error("Import abgebrochen: layers fehlt oder ist ungueltig.");
+    }
+
+    if (!layers.every((n) => Number.isInteger(n) && n > 0)) {
+      throw new Error(
+        "Import abgebrochen: layers muss nur positive Ganzzahlen enthalten.",
+      );
+    }
+
+    if (!network?.state || typeof network.state !== "object") {
+      throw new Error("Import abgebrochen: state fehlt.");
+    }
+
+    if (
+      !Array.isArray(network.state.weights) ||
+      !Array.isArray(network.state.biases)
+    ) {
+      throw new Error("Import abgebrochen: state.weights/state.biases fehlt.");
+    }
+  }
+
+  async function onNetworkFileSelected(event) {
+    try {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) {
+        return;
+      }
+
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const network = parsed?.network;
+
+      assertLoadedNetworkShape(network);
+
+      const layers = clone(network.layers);
+      const inputCount = layers[0];
+      const outputCount = layers[layers.length - 1];
+
+      const inputNames = Array.from({ length: inputCount }, (_, idx) => {
+        const raw = String(network.input_names?.[idx] ?? "").trim();
+        return raw.length > 0 ? raw : `input${idx + 1}`;
+      });
+
+      const outputNames = Array.from({ length: outputCount }, (_, idx) => {
+        const raw = String(network.output_names?.[idx] ?? "").trim();
+        return raw.length > 0 ? raw : `output${idx + 1}`;
+      });
+
+      const inputValues = Array.from({ length: inputCount }, (_, idx) =>
+        String(network.input_values?.[idx] ?? "0"),
+      );
+
+      const outputValues = Array.from({ length: outputCount }, (_, idx) =>
+        String(network.output_values?.[idx] ?? "-"),
+      );
+
+      updateActiveTab((tab) => {
+        tab.name = String(parsed?.name ?? tab.name);
+        tab.traininge;
+        tab.layers = layers;
+        tab.activation = String(
+          network.activation ?? tab.activation ?? "logistic",
+        );
+        tab.learningRate = Number(
+          network.learning_rate ?? tab.learningRate ?? 0.1,
+        );
+        tab.state = clone(network.state);
+        tab.inputNeuronNames = inputNames;
+        tab.outputNeuronNames = outputNames;
+        tab.inputNeuronValues = inputValues;
+        tab.outputNeuronValues = outputValues;
+        tab.lossHistory = Array.isArray(network.loss_history)
+          ? [...network.loss_history]
+          : [];
+        normalizeTabNeuronIo(tab);
+        normalizeDatasetRows(tab);
+      });
+
+      activationMenuOpen = false;
+      await runLiveInferenceForTab(activeTabId, { ensureState: false });
+      status = `${getActiveTab().name}: Netz importiert.`;
+      errorText = "";
+    } catch (error) {
+      errorText = error instanceof Error ? error.message : String(error);
+    }
   }
 
   async function onDatasetFileSelected(event) {
@@ -1837,7 +1978,7 @@
   <section class="toolbar">
     <div class="toolbar-group">
       <label>
-        Aktivierung
+        Aktivierungsfunktion
         <div
           class="activation-select-wrap"
           onfocusout={onActivationMenuFocusOut}
@@ -1946,7 +2087,10 @@
           <span>Abbrechen</span>
         {:else}
           <img src="/play-solid-full.svg" alt="" width="16" height="16" />
-          <span>Training starten</span>
+          <span
+            >Training
+            {trainingEpochsDone > 0 ? "fortsetzen" : "starten"}
+          </span>
         {/if}
       </button>
     </div>
@@ -2018,6 +2162,23 @@
           >+
         </button>
       </div>
+      <button
+        class="btn-hover"
+        onclick={exportCurrentNetwork}
+        disabled={isTraining}>Netz exportieren</button
+      >
+      <button
+        class="btn-hover"
+        onclick={triggerImportNetwork}
+        disabled={isTraining}>Netz importieren</button
+      >
+      <input
+        bind:this={networkImportInputEl}
+        type="file"
+        accept="application/json,.json"
+        style="display:none"
+        onchange={onNetworkFileSelected}
+      />
       {#each activeTab.layers as count, layerIndex}
         <label>
           {layerIndex === 0
