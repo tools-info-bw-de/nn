@@ -4,9 +4,40 @@ let runtimeReady = false;
 let runtimeReadyPromise = null;
 let trainerCounter = 0;
 const trainers = new Map();
-const baseUrl = import.meta.env.BASE_URL || "/";
-const wasmExecUrl = `${baseUrl}wasm_exec.js`;
-const wasmBinaryUrl = `${baseUrl}nn.wasm`;
+let runtimeBaseUrl = "/";
+
+function normalizeBaseUrl(raw) {
+  const value = String(raw || "/").trim();
+  if (!value) {
+    return "/";
+  }
+  const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
+  return withLeadingSlash.endsWith("/")
+    ? withLeadingSlash
+    : `${withLeadingSlash}/`;
+}
+
+function resolveRuntimeAsset(fileName) {
+  return `${runtimeBaseUrl}${fileName}`;
+}
+
+async function loadRuntimeScript(url) {
+  if (typeof importScripts === "function") {
+    importScripts(url);
+    return;
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Script konnte nicht geladen werden: ${url} (HTTP ${response.status}).`,
+    );
+  }
+
+  const code = await response.text();
+  // Fallback fuer module worker ohne importScripts.
+  globalThis.eval(code);
+}
 
 function makeTrainerId() {
   trainerCounter += 1;
@@ -43,7 +74,9 @@ async function initRuntime() {
   }
 
   runtimeReadyPromise = (async () => {
-    importScripts(wasmExecUrl);
+    const wasmExecUrl = resolveRuntimeAsset("wasm_exec.js");
+    const wasmBinaryUrl = resolveRuntimeAsset("nn.wasm");
+    await loadRuntimeScript(wasmExecUrl);
 
     if (typeof Go !== "function") {
       throw new Error("Go Runtime in wasm_exec.js nicht verfügbar.");
@@ -282,6 +315,7 @@ self.onmessage = async (event) => {
 
   try {
     if (type === "init") {
+      runtimeBaseUrl = normalizeBaseUrl(msg.baseUrl);
       await initRuntime();
       self.postMessage({ type: "ready", id });
       return;

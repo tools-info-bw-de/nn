@@ -6,7 +6,7 @@
   "scripts": {
     "wasm:sync": "node scripts/sync-wasm.mjs",
     "dev": "npm run wasm:sync && vite",
-    "build": "npm run wasm:sync && vite build --base=/nn/",
+    "build": "npm run wasm:sync && vite build --base=/nn/ ",
     "preview": "vite preview"
   },
   "devDependencies": {

@@ -3,6 +3,7 @@
   import FehlerwertChart from "./lib/FehlerwertChart.svelte";
   import NetworkGraph from "./lib/NetworkGraph.svelte";
   import TrainingsModal from "./lib/TrainingsModal.svelte";
+  import SevenSegment from "./lib/SevenSegment.svelte";
 
   const defaultDataset = JSON.stringify(
     [
@@ -72,13 +73,26 @@
   const nnWorkerPending = new Map();
   let networkImportInputEl = null;
 
+  function resetWorkerInstance() {
+    if (nnWorker) {
+      nnWorker.onmessage = null;
+      nnWorker.onerror = null;
+      nnWorker.onmessageerror = null;
+      nnWorker.terminate();
+      nnWorker = null;
+    }
+    nnWorkerReadyPromise = null;
+  }
+
   function initWorker() {
     if (nnWorkerReadyPromise) {
       return nnWorkerReadyPromise;
     }
 
     nnWorkerReadyPromise = new Promise((resolve, reject) => {
-      const worker = new Worker(new URL("./lib/nnWorker.js", import.meta.url));
+      const worker = new Worker(new URL("./lib/nnWorker.js", import.meta.url), {
+        type: "classic",
+      });
       nnWorker = worker;
 
       const initRequestId = ++nnWorkerRequestId;
@@ -91,6 +105,15 @@
 
         if (msg.type === "ready" && msg.id === initRequestId) {
           resolve();
+          return;
+        }
+
+        if (msg.type === "response" && msg.id === initRequestId && !msg.ok) {
+          reject(
+            new Error(
+              msg.error || "WASM-Worker Initialisierung fehlgeschlagen.",
+            ),
+          );
           return;
         }
 
@@ -112,11 +135,29 @@
       };
 
       worker.onerror = (event) => {
-        const err = new Error(event.message || "WASM-Worker abgestürzt.");
-        reject(err);
+        const details = [event.filename, event.lineno, event.colno]
+          .filter(
+            (value) => value !== undefined && value !== null && value !== "",
+          )
+          .join(":");
+        const suffix = details ? ` (${details})` : "";
+        reject(
+          new Error(`${event.message || "WASM-Worker abgestürzt."}${suffix}`),
+        );
       };
 
-      worker.postMessage({ type: "init", id: initRequestId });
+      worker.onmessageerror = () => {
+        reject(new Error("WASM-Worker Nachricht konnte nicht gelesen werden."));
+      };
+
+      worker.postMessage({
+        type: "init",
+        id: initRequestId,
+        baseUrl: import.meta.env.BASE_URL,
+      });
+    }).catch((error) => {
+      resetWorkerInstance();
+      throw error;
     });
 
     return nnWorkerReadyPromise;
@@ -148,11 +189,7 @@
     }
     nnWorkerPending.clear();
 
-    if (nnWorker) {
-      nnWorker.terminate();
-      nnWorker = null;
-    }
-    nnWorkerReadyPromise = null;
+    resetWorkerInstance();
   }
 
   function clone(value) {
@@ -169,6 +206,7 @@
       activation: "logistic",
       learningRate: 0.1,
       epochs: 0,
+      showOutputSegment: false,
       shuffle: true,
       datasetRows: defaultRows,
       inputNeuronValues: Array.from({ length: layers[0] }, (_, idx) =>
@@ -1564,6 +1602,18 @@
       tab.outputNeuronNames?.[nodeIndex] ?? `output${nodeIndex + 1}`,
     );
 
+    if (
+      activeTab.showOutputSegment &&
+      ["a", "b", "c", "d", "e", "f", "g"].includes(
+        tab.outputNeuronNames?.[nodeIndex],
+      )
+    ) {
+      window.alert(
+        "In diesem Modus können die Namen der Output-Neuronen nicht bearbeitet werden, da sie zur Darstellung von Segmentanzeigen verwendet werden.",
+      );
+      return;
+    }
+
     const value = window.prompt(`Name für Output ${nodeIndex + 1}`, current);
 
     if (value === null) {
@@ -1894,6 +1944,62 @@
       };
     });
   });
+
+  function outputValueToBool(rawValue) {
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0.5;
+  }
+
+  let seg = $derived.by(() => {
+    const result = {
+      a: false,
+      b: false,
+      c: false,
+      d: false,
+      e: false,
+      f: false,
+      g: false,
+    };
+
+    const names = Array.isArray(activeTab?.outputNeuronNames)
+      ? activeTab.outputNeuronNames
+      : [];
+    const values = Array.isArray(activeTab?.outputNeuronValues)
+      ? activeTab.outputNeuronValues
+      : [];
+
+    for (let idx = 0; idx < names.length; idx += 1) {
+      const key = String(names[idx] ?? "")
+        .trim()
+        .toLowerCase();
+
+      if (!(key in result)) {
+        continue;
+      }
+
+      result[key] = outputValueToBool(values[idx]);
+    }
+
+    return result;
+  });
+
+  function handleShowOutputSegmentChange(nextChecked) {
+    if (!nextChecked) {
+      return;
+    }
+
+    // 7 Output-Nodes bereitstellen mit Namen "a" bis "g"
+    updateActiveTab((tab) => {
+      const outputCount = 7;
+      tab.layers[tab.layers.length - 1] = outputCount;
+      tab.outputNeuronNames = ["a", "b", "c", "d", "e", "f", "g"];
+      tab.state = null;
+      tab.lossHistory = [];
+      tab.epochs = 0;
+      normalizeTabNeuronIo(tab);
+      tab.outputNeuronValues = Array.from({ length: outputCount }, () => "-");
+    });
+  }
 </script>
 
 <main class="app-shell">
@@ -2198,17 +2304,45 @@
       </div>
     </div>
     <div class="graph-scroll">
-      <NetworkGraph
-        {graph}
-        {orderedConnections}
-        {highlightedConnectionId}
-        {activeTab}
-        {setInputNeuronValue}
-        {editInputNeuronName}
-        {editOutputNeuronName}
-        {editWeight}
-        {editBias}
-      />
+      <div class="output-segment-option">
+        <input
+          type="checkbox"
+          bind:checked={activeTab.showOutputSegment}
+          id="showOutputSegment"
+          onchange={(e) =>
+            handleShowOutputSegmentChange(e.currentTarget.checked)}
+        />
+        <label for="showOutputSegment"> 7-Segment-Anzeige </label>
+      </div>
+
+      <div class="graph-area">
+        <NetworkGraph
+          {graph}
+          {orderedConnections}
+          {highlightedConnectionId}
+          {activeTab}
+          {setInputNeuronValue}
+          {editInputNeuronName}
+          {editOutputNeuronName}
+          {editWeight}
+          {editBias}
+        />
+
+        {#if activeTab.showOutputSegment}
+          <div class="output-segment">
+            <SevenSegment
+              a={seg.a}
+              b={seg.b}
+              c={seg.c}
+              d={seg.d}
+              e={seg.e}
+              f={seg.f}
+              g={seg.g}
+              editable={false}
+            />
+          </div>
+        {/if}
+      </div>
     </div>
   </section>
 
@@ -2237,6 +2371,7 @@
         {startTrainingWindowResize}
         bind:trainingImportError
         bind:datasetModalOpen
+        showOutputSegment={activeTab.showOutputSegment}
       />
     </div>
   {/if}
@@ -2244,6 +2379,32 @@
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+  .graph-area {
+    border: 1px dashed var(--line);
+    display: flex;
+    align-items: center;
+  }
+
+  .output-segment {
+    width: 120px;
+    height: 180px;
+  }
+
+  .output-segment-option {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 0.5rem;
+  }
+
+  .output-segment-option > input {
+    width: inherit;
+  }
 
   .save-network-group {
     margin-left: auto;
@@ -2616,6 +2777,7 @@
 
   .graph-scroll {
     overflow-x: hidden;
+    position: relative;
   }
 
   .hint {

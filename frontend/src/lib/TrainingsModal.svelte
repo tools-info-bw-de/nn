@@ -1,4 +1,6 @@
 <script>
+  import SevenSegment from "./SevenSegment.svelte";
+
   const publicAsset = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 
   let {
@@ -24,7 +26,58 @@
     startTrainingWindowResize,
     datasetModalOpen = $bindable(true),
     trainingImportError = $bindable(""),
+    showOutputSegment,
   } = $props();
+
+  function getOutputIndexByName(neuronName) {
+    return activeTab.outputNeuronNames?.findIndex(
+      (name) => String(name).toLowerCase() === neuronName,
+    );
+  }
+
+  function getRowSegmentValue(rowIndex, neuronName) {
+    const neuronIndex = getOutputIndexByName(neuronName);
+    if (neuronIndex === undefined || neuronIndex < 0) {
+      return false;
+    }
+
+    const row = activeTab.datasetRows?.[rowIndex];
+    const value = Number(row?.target?.[neuronIndex]);
+    return Number.isFinite(value) && value >= 0.5;
+  }
+
+  function setRowSegmentValue(rowIndex, neuronName, newValue) {
+    const neuronIndex = getOutputIndexByName(neuronName);
+    if (neuronIndex === undefined || neuronIndex < 0) {
+      return;
+    }
+
+    setDatasetRowOutput(rowIndex, neuronIndex, newValue ? 1 : 0);
+  }
+
+  function createRowSegmentBinding(rowIndex) {
+    const binding = {};
+
+    for (const name of ["a", "b", "c", "d", "e", "f", "g"]) {
+      Object.defineProperty(binding, name, {
+        enumerable: true,
+        get() {
+          return getRowSegmentValue(rowIndex, name);
+        },
+        set(nextValue) {
+          setRowSegmentValue(rowIndex, name, Boolean(nextValue));
+        },
+      });
+    }
+
+    return binding;
+  }
+
+  let segmentBindings = $derived.by(() =>
+    (activeTab.datasetRows || []).map((_, rowIndex) =>
+      createRowSegmentBinding(rowIndex),
+    ),
+  );
 </script>
 
 <div
@@ -139,6 +192,9 @@
             class="outputs-header">Outputs</th
           >
           <th></th>
+          {#if showOutputSegment}
+            <th></th>
+          {/if}
         </tr>
         <tr>
           <th>Nr.</th>
@@ -167,6 +223,9 @@
             </th>
           {/each}
           <th></th>
+          {#if showOutputSegment}
+            <th></th>
+          {/if}
         </tr>
       </thead>
       <tbody>
@@ -201,6 +260,20 @@
                 />
               </td>
             {/each}
+            {#if showOutputSegment}
+              <td class="segment-cell">
+                <SevenSegment
+                  bind:a={segmentBindings[rowIndex].a}
+                  bind:b={segmentBindings[rowIndex].b}
+                  bind:c={segmentBindings[rowIndex].c}
+                  bind:d={segmentBindings[rowIndex].d}
+                  bind:e={segmentBindings[rowIndex].e}
+                  bind:f={segmentBindings[rowIndex].f}
+                  bind:g={segmentBindings[rowIndex].g}
+                  editable={true}
+                />
+              </td>
+            {/if}
             <td>
               <button
                 class="btn-hover"
@@ -215,6 +288,8 @@
                 /></button
               >
             </td>
+
+            <!-- //activeTab.outputNeuronNames?.find((n, i) => {if (n === "a") { row.target[i] >= 0.5} else false} -->
           </tr>
         {/each}
       </tbody>
@@ -226,6 +301,12 @@
 </div>
 
 <style>
+  .segment-cell {
+    min-width: 55px;
+    width: 55px;
+    height: 80px;
+  }
+
   .button-group > * {
     font-size: inherit;
   }
@@ -328,7 +409,7 @@
   }
 
   .dataset-grid td input {
-    width: 5.5rem;
+    width: 3rem;
   }
 
   .inline-import-box {
