@@ -22,11 +22,13 @@
   let wasmReady = false;
   let busy = $state(false);
   let activationMenuOpen = $state(false);
+  let infoMenuOpen = $state(false);
 
   let availableActivations = $state(["binary", "logistic", "relu"]);
 
   let tabCounter = 1;
   let tabs = $state([createTab(tabCounter)]);
+  // svelte-ignore state_referenced_locally
   let activeTabId = $state(tabs[0].id);
 
   let renamingTabId = $state("");
@@ -1414,6 +1416,23 @@
     activationMenuOpen = !activationMenuOpen;
   }
 
+  function toggleInfoMenu() {
+    infoMenuOpen = !infoMenuOpen;
+  }
+
+  function onInfoMenuFocusOut(event) {
+    const next = event.relatedTarget;
+    const current = event.currentTarget;
+
+    if (
+      !(current instanceof HTMLElement) ||
+      !(next instanceof HTMLElement) ||
+      !current.contains(next)
+    ) {
+      infoMenuOpen = false;
+    }
+  }
+
   function closeActivationMenu() {
     activationMenuOpen = false;
   }
@@ -2009,6 +2028,60 @@
 </script>
 
 <main class="app-shell">
+  <div class="page-info" onfocusout={onInfoMenuFocusOut}>
+    <button
+      type="button"
+      class="page-info-trigger btn-hover"
+      aria-haspopup="dialog"
+      aria-expanded={infoMenuOpen}
+      onclick={toggleInfoMenu}
+    >
+      info
+    </button>
+
+    {#if infoMenuOpen}
+      <div
+        class="page-info-dropdown"
+        role="dialog"
+        aria-label="Informationen zur Webseite"
+      >
+        <p>
+          Diese Webseite visualisiert ein Künstliches Neuronales Netzwerk (KNN)
+          das du selber konfigurieren und trainieren kannst. Alle wesentlichen
+          Daten kannst du selbst anpassen.
+        </p>
+        <p>
+          Die Berechnungen laufen vollständig im Browser! Im Hintergrund wird
+          ein in Go geschriebenes WebAssembly-Modul (WASM) verwendet, das
+          wesentlich effizienter als JavaScript läuft.
+        </p>
+
+        <hr />
+
+        <div class="about">
+          <div>
+            Quellcode auf <a
+              href="https://github.com/tools-info-bw-de/nn"
+              target="_blank"
+              rel="noopener">GitHub</a
+            >
+          </div>
+
+          <div>
+            Lizenz:
+            <a
+              href="https://github.com/tools-info-bw-de/nn/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener">GPL-3.0</a
+            >
+          </div>
+
+          <div>Marco Kümmel</div>
+        </div>
+      </div>
+    {/if}
+  </div>
+
   <header class="tabs-header">
     <div class="tab-row">
       {#each tabs as tab}
@@ -2235,7 +2308,21 @@
       </div>
 
       <div class="values">
-        <div><h4>Fehlerwerte</h4></div>
+        <div class="tooltip">
+          <h4>
+            Fehlerwerte <img
+              src={publicAsset("circle-question-solid-full.svg")}
+              alt="Question"
+              width="18"
+              height="18"
+            />
+          </h4>
+          <span class="tooltiptext"
+            >Die Fehlerwerte zeigen die Abweichung zwischen den erwarteten
+            Ergebnissen (Trainingsdaten) und den tatsächlichen Werten des Netzes
+            an.</span
+          >
+        </div>
         <div>
           Max:
           {#if hasLoss}
@@ -2269,11 +2356,10 @@
   </section>
 
   <section class="network-graph-wrap">
-    <h2>Live-Netzansicht (Klicken zum Bearbeiten)</h2>
-    <p class="hint">
-      Klicke auf Gewichtslabels, um einzelne Gewichte zu setzen. Klicke auf den
-      Bias-Wert, um Bias zu ändern.
-    </p>
+    <div class="network-title">
+      <h2>Live-Netzansicht</h2>
+      <div>(Klicken zum Bearbeiten)</div>
+    </div>
     <div class="layer-controls">
       <div class="button-group">
         <span>Hidden Layer:</span>
@@ -2423,8 +2509,16 @@
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
-  .epochs,
-  label > .tooltip {
+  .network-title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 1rem;
+    font-family: var(--font-head);
+    font-size: 20px;
+  }
+
+  .tooltip,
+  .tooltip > h4 {
     display: inline-flex;
   }
 
@@ -2769,6 +2863,44 @@
   .activation-preview .curve {
     stroke: var(--accent-2);
     stroke-width: 2;
+  }
+
+  .page-info {
+    position: fixed;
+    top: 0.8rem;
+    right: 0.8rem;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+  }
+
+  .page-info-trigger {
+    min-width: 4.8rem;
+    text-align: center;
+  }
+
+  .page-info-dropdown {
+    width: min(360px, calc(100vw - 1.6rem));
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+    padding: 0.7rem 0.8rem;
+  }
+
+  .page-info-dropdown p {
+    margin: 0.35rem 0;
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+
+  .about {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   hr {
