@@ -634,6 +634,7 @@
         layers: clone(active.layers),
         activation: active.activation,
         learning_rate: Number(active.learningRate),
+        show_output_segment: Boolean(active.showOutputSegment),
         input_names: Array.from({ length: inputCount }, (_, idx) =>
           String(active.inputNeuronNames?.[idx] ?? `input${idx + 1}`),
         ),
@@ -733,6 +734,11 @@
           Number.isFinite(importedEpochs) && importedEpochs >= 0
             ? Math.floor(importedEpochs)
             : Number(tab.epochs) || 0;
+        tab.showOutputSegment = Boolean(
+          network.show_output_segment ??
+            parsed?.show_output_segment ??
+            tab.showOutputSegment,
+        );
         tab.layers = layers;
         tab.activation = String(
           network.activation ?? tab.activation ?? "logistic",
@@ -2047,7 +2053,20 @@
   <section class="toolbar">
     <div class="toolbar-group">
       <label>
-        Aktivierungsfunktion
+        <div class="tooltip">
+          Aktivierungsfunktion
+          <img
+            src={publicAsset("circle-question-solid-full.svg")}
+            alt="Question"
+            width="18"
+            height="18"
+          />
+          <span class="tooltiptext"
+            >Die Aktivierungsfunktion bestimmt, wie die Summe der gewichteten
+            Inputs (x-Achse) in die Ausgabe eines Neurons umgewandelt wird
+            (y-Achse).<br />
+          </span>
+        </div>
         <div
           class="activation-select-wrap"
           onfocusout={onActivationMenuFocusOut}
@@ -2111,7 +2130,20 @@
       </label>
 
       <label>
-        Lernrate
+        <div class="tooltip">
+          Lernrate
+          <img
+            src={publicAsset("circle-question-solid-full.svg")}
+            alt=""
+            width="18"
+            height="18"
+          />
+          <span class="tooltiptext"
+            >Die Lernrate bestimmt, wie stark die Gewichte im Netzwerk bei jedem
+            Trainingsdurchlauf angepasst werden.<br />Achtung: Lernraten können
+            zu hoch oder auch zu niedrig sein, um die Fehlerwerte zu minimieren.</span
+          >
+        </div>
         <input
           type="number"
           min="0.00"
@@ -2189,7 +2221,18 @@
         {/if}
       </div>
 
-      <div class="epochs">Epochen: {activeTab.epochs}</div>
+      <div class="epochs tooltip">
+        Epochen <img
+          src={publicAsset("circle-question-solid-full.svg")}
+          alt=""
+          width="18"
+          height="18"
+        />: {activeTab.epochs}
+        <span class="tooltiptext"
+          >Jeder vollständige Trainingsdurchlauf durch alle Trainingsdaten ist
+          eine Epoche.</span
+        >
+      </div>
 
       <div class="values">
         <div><h4>Fehlerwerte</h4></div>
@@ -2379,6 +2422,45 @@
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+  .epochs,
+  label > .tooltip {
+    display: inline-flex;
+  }
+
+  .tooltip {
+    position: relative;
+  }
+
+  .tooltiptext {
+    visibility: hidden;
+    width: 250px;
+    background-color: black;
+    color: #ffffff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 150%;
+    left: 50%;
+    margin-left: -60px;
+  }
+
+  .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: black transparent transparent transparent;
+  }
+
+  .tooltip:hover .tooltiptext {
+    visibility: visible;
+  }
 
   .graph-area {
     border: 1px dashed var(--line);
