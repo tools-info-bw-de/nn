@@ -70,6 +70,7 @@
   let highlightedConnectionId = $state("");
   let liveInferenceRunId = 0;
   let liveOutputValuesByTabId = $state({});
+  let liveNodeInferenceByTabId = $state({});
   let nnWorker = null;
   let nnWorkerReadyPromise = null;
   let nnWorkerRequestId = 0;
@@ -215,6 +216,14 @@
       : Array.from({ length: outputCount }, () => "-");
   }
 
+  function getDisplayedNodeInference(tab) {
+    if (!tab) {
+      return {};
+    }
+    const entry = liveNodeInferenceByTabId[tab.id];
+    return entry && typeof entry === "object" ? entry : {};
+  }
+
   function createTab(nr) {
     const layers = [2, 3, 1];
     const defaultRows = JSON.parse(defaultDataset);
@@ -327,6 +336,91 @@
       const parsed = Number(raw);
       return Number.isFinite(parsed) ? parsed.toFixed(4) : "-";
     });
+  }
+
+  function formatInferenceNumber(value, digits = 4) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+      return "-";
+    }
+    return num.toFixed(digits);
+  }
+
+  function buildNodeInferenceSnapshot(tab, inputValues, outputOverride = null) {
+    const state = tab?.state;
+    const layers = state?.layers;
+
+    if (!Array.isArray(layers) || layers.length < 2) {
+      return {
+        nodeInferenceById: {},
+        outputValues: mapOutputsToStrings(tab, outputOverride || []),
+      };
+    }
+
+    const activations = [inputValues.map((value) => Number(value) || 0)];
+    const nodeInferenceById = {};
+
+    for (let layer = 1; layer < layers.length; layer += 1) {
+      const prev = activations[layer - 1] || [];
+      const outSize = layers[layer] ?? 0;
+      const actName = String(state.activations?.[layer - 1] ?? tab.activation);
+      const layerActs = [];
+
+      for (let node = 0; node < outSize; node += 1) {
+        const weights = state.weights?.[layer - 1]?.[node] || [];
+        const bias = Number(state.biases?.[layer - 1]?.[node] ?? 0);
+
+        let z = bias;
+        const terms = [];
+
+        for (let i = 0; i < prev.length; i += 1) {
+          const w = Number(weights[i] ?? 0);
+          const aPrev = Number(prev[i] ?? 0);
+          z += w * aPrev;
+          terms.push(`${formatInferenceNumber(w, 3)}*${formatInferenceNumber(aPrev, 3)}`);
+        }
+
+        const activated = evaluateActivation(actName, z);
+        layerActs.push(activated);
+
+        nodeInferenceById[`l${layer}-n${node}`] = {
+          valueText: formatInferenceNumber(activated, 4),
+          tooltip:
+            `Layer ${layer + 1}, Neuron ${node + 1}\n` +
+            `z = (${terms.join(" + ")}) + ${formatInferenceNumber(bias, 3)} = ${formatInferenceNumber(z, 4)}\n` +
+            `a = ${actName}(z) = ${formatInferenceNumber(activated, 4)}`,
+        };
+      }
+
+      activations.push(layerActs);
+    }
+
+    const lastLayerIdx = layers.length - 1;
+    const outputLayer = activations[lastLayerIdx] || [];
+
+    if (Array.isArray(outputOverride) && outputOverride.length > 0) {
+      for (let node = 0; node < outputLayer.length; node += 1) {
+        const key = `l${lastLayerIdx}-n${node}`;
+        const wasmOut = Number(outputOverride[node]);
+        if (!Number.isFinite(wasmOut)) {
+          continue;
+        }
+
+        outputLayer[node] = wasmOut;
+        const existing = nodeInferenceById[key];
+        if (existing) {
+          nodeInferenceById[key] = {
+            ...existing,
+            valueText: formatInferenceNumber(wasmOut, 4),
+          };
+        }
+      }
+    }
+
+    return {
+      nodeInferenceById,
+      outputValues: mapOutputsToStrings(tab, outputLayer),
+    };
   }
 
   function normalizeDatasetRows(tab) {
@@ -1083,6 +1177,10 @@
         () => "-",
       ),
     };
+    liveNodeInferenceByTabId = {
+      ...liveNodeInferenceByTabId,
+      [tabId]: {},
+    };
 
     await runLiveInferenceForTab(tabId, { ensureState: false });
   }
@@ -1123,9 +1221,14 @@
         return;
       }
 
+      const snapshot = buildNodeInferenceSnapshot(tab, payload.input, result.output);
       liveOutputValuesByTabId = {
         ...liveOutputValuesByTabId,
-        [tabId]: mapOutputsToStrings(tab, result.output),
+        [tabId]: snapshot.outputValues,
+      };
+      liveNodeInferenceByTabId = {
+        ...liveNodeInferenceByTabId,
+        [tabId]: snapshot.nodeInferenceById,
       };
     } catch (error) {
       if (tabId === activeTabId) {
@@ -1235,7 +1338,6 @@
     let finalTrainerId = "";
     let lastObservedStatus = null;
 
-    console.log(activeTab.learningRate);
     // check if Lernrate valid
     if (
       isNaN(Number(activeTab.learningRate)) ||
@@ -1399,6 +1501,9 @@
     const nextLiveOutputValuesByTabId = { ...liveOutputValuesByTabId };
     delete nextLiveOutputValuesByTabId[tabId];
     liveOutputValuesByTabId = nextLiveOutputValuesByTabId;
+    const nextLiveNodeInferenceByTabId = { ...liveNodeInferenceByTabId };
+    delete nextLiveNodeInferenceByTabId[tabId];
+    liveNodeInferenceByTabId = nextLiveNodeInferenceByTabId;
 
     if (activeTabId === tabId) {
       const nextIdx = Math.max(0, idx - 1);
@@ -2492,6 +2597,7 @@
           {highlightedConnectionId}
           {activeTab}
           outputNeuronValues={getDisplayedOutputValues(activeTab)}
+          nodeInferenceById={getDisplayedNodeInference(activeTab)}
           {setInputNeuronValue}
           {editInputNeuronName}
           {editOutputNeuronName}

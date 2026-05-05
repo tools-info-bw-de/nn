@@ -5,6 +5,7 @@
     orderedConnections,
     activeTab,
     outputNeuronValues = [],
+    nodeInferenceById = {},
     setInputNeuronValue,
     editInputNeuronName,
     editOutputNeuronName,
@@ -164,9 +165,15 @@
           )}
         </text>
       {/if}
-      {#if node.layer === activeTab.layers.length - 1}
+      {#if node.layer > 0}
         <text class="node-output" x={node.x + 24} y={node.y + 4}>
-          {outputNeuronValues?.[node.node] ?? "-"}
+          {nodeInferenceById?.[`l${node.layer}-n${node.node}`]?.valueText ??
+            (node.layer === activeTab.layers.length - 1
+              ? (outputNeuronValues?.[node.node] ?? "-")
+              : "-")}
+          {#if nodeInferenceById?.[`l${node.layer}-n${node.node}`]?.tooltip}
+            <title>{nodeInferenceById?.[`l${node.layer}-n${node.node}`]?.tooltip}</title>
+          {/if}
         </text>
       {/if}
     </g>
@@ -290,5 +297,6 @@
     font-size: 10px;
     fill: #0f766e;
     font-weight: 600;
+    cursor: help;
   }
 </style>
