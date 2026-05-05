@@ -69,6 +69,7 @@
   let trainingDeviation = null;
   let highlightedConnectionId = $state("");
   let liveInferenceRunId = 0;
+  let liveOutputValuesByTabId = $state({});
   let nnWorker = null;
   let nnWorkerReadyPromise = null;
   let nnWorkerRequestId = 0;
@@ -196,6 +197,22 @@
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
+  }
+
+  function getDisplayedOutputValues(tab) {
+    if (!tab) {
+      return [];
+    }
+
+    const outputCount = tab.layers?.[tab.layers.length - 1] ?? 0;
+    const liveValues = liveOutputValuesByTabId[tab.id];
+    if (Array.isArray(liveValues) && liveValues.length === outputCount) {
+      return liveValues;
+    }
+
+    return Array.isArray(tab.outputNeuronValues)
+      ? tab.outputNeuronValues
+      : Array.from({ length: outputCount }, () => "-");
   }
 
   function createTab(nr) {
@@ -647,7 +664,7 @@
           String(active.inputNeuronValues?.[idx] ?? "0"),
         ),
         output_values: Array.from({ length: outputCount }, (_, idx) =>
-          String(active.outputNeuronValues?.[idx] ?? "-"),
+          String(getDisplayedOutputValues(active)?.[idx] ?? "-"),
         ),
         state,
       },
@@ -1059,6 +1076,14 @@
       t.lossHistory = [];
     });
 
+    liveOutputValuesByTabId = {
+      ...liveOutputValuesByTabId,
+      [tabId]: Array.from(
+        { length: result.state?.layers?.[result.state.layers.length - 1] ?? 0 },
+        () => "-",
+      ),
+    };
+
     await runLiveInferenceForTab(tabId, { ensureState: false });
   }
 
@@ -1083,10 +1108,8 @@
           return;
         }
         await createStateForTab(tabId);
-        tab = tabs.find((entry) => entry.id === tabId);
-        if (!tab?.state) {
-          return;
-        }
+        // createStateForTab() triggert bereits eine Inferenz fuer den neuen Zustand.
+        return;
       }
 
       const payload = {
@@ -1100,10 +1123,10 @@
         return;
       }
 
-      updateTab(tabId, (next) => {
-        normalizeTabNeuronIo(next);
-        next.outputNeuronValues = mapOutputsToStrings(next, result.output);
-      });
+      liveOutputValuesByTabId = {
+        ...liveOutputValuesByTabId,
+        [tabId]: mapOutputsToStrings(tab, result.output),
+      };
     } catch (error) {
       if (tabId === activeTabId) {
         console.error(error instanceof Error ? error.message : String(error));
@@ -1373,6 +1396,9 @@
     }
     const idx = tabs.findIndex((t) => t.id === tabId);
     tabs = tabs.filter((t) => t.id !== tabId);
+    const nextLiveOutputValuesByTabId = { ...liveOutputValuesByTabId };
+    delete nextLiveOutputValuesByTabId[tabId];
+    liveOutputValuesByTabId = nextLiveOutputValuesByTabId;
 
     if (activeTabId === tabId) {
       const nextIdx = Math.max(0, idx - 1);
@@ -2007,9 +2033,7 @@
     const names = Array.isArray(activeTab?.outputNeuronNames)
       ? activeTab.outputNeuronNames
       : [];
-    const values = Array.isArray(activeTab?.outputNeuronValues)
-      ? activeTab.outputNeuronValues
-      : [];
+    const values = getDisplayedOutputValues(activeTab);
 
     for (let idx = 0; idx < names.length; idx += 1) {
       const key = String(names[idx] ?? "")
@@ -2467,6 +2491,7 @@
           {orderedConnections}
           {highlightedConnectionId}
           {activeTab}
+          outputNeuronValues={getDisplayedOutputValues(activeTab)}
           {setInputNeuronValue}
           {editInputNeuronName}
           {editOutputNeuronName}

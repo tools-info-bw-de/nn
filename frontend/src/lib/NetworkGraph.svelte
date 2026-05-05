@@ -4,6 +4,7 @@
     highlightedConnectionId,
     orderedConnections,
     activeTab,
+    outputNeuronValues = [],
     setInputNeuronValue,
     editInputNeuronName,
     editOutputNeuronName,
@@ -165,7 +166,7 @@
       {/if}
       {#if node.layer === activeTab.layers.length - 1}
         <text class="node-output" x={node.x + 24} y={node.y + 4}>
-          {activeTab.outputNeuronValues?.[node.node] ?? "-"}
+          {outputNeuronValues?.[node.node] ?? "-"}
         </text>
       {/if}
     </g>
