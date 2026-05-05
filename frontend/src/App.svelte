@@ -286,10 +286,26 @@
     return mapped;
   }
 
-  function mergeLossHistoryMaps(base, delta) {
+  function offsetLossHistoryMap(raw, epochOffset = 0) {
+    const normalized = normalizeLossHistoryMap(raw);
+    const safeOffset = Math.max(0, Math.floor(Number(epochOffset) || 0));
+    const mapped = {};
+
+    for (const [epochKey, loss] of Object.entries(normalized)) {
+      const epoch = Number(epochKey);
+      if (!Number.isFinite(epoch) || epoch < 1) {
+        continue;
+      }
+      mapped[String(epoch + safeOffset)] = Number(loss);
+    }
+
+    return mapped;
+  }
+
+  function mergeLossHistoryMaps(base, delta, epochOffset = 0) {
     return {
       ...normalizeLossHistoryMap(base),
-      ...normalizeLossHistoryMap(delta),
+      ...offsetLossHistoryMap(delta, epochOffset),
     };
   }
 
@@ -1342,6 +1358,7 @@
     const combinedHistory = mergeLossHistoryMaps(
       trainingLossHistoryBase,
       snapshot.loss_history,
+      trainingEpochOffset,
     );
 
     updateTab(tabId, (next) => {
@@ -1495,6 +1512,7 @@
         const combinedHistory = mergeLossHistoryMaps(
           trainingLossHistoryBase,
           trainStatus.loss_history,
+          trainingEpochOffset,
         );
 
         updateTab(trainingTabId, (next) => {
@@ -2715,7 +2733,22 @@
   </section>
 
   {#if datasetModalOpen}
-    <div class="modal-backdrop">
+    <div
+      class="modal-backdrop"
+      role="button"
+      tabindex="0"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) {
+          datasetModalOpen = false;
+        }
+      }}
+      onkeydown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          datasetModalOpen = false;
+        }
+      }}
+    >
       <TrainingsModal
         {activeTab}
         {trainingWindowPosition}
@@ -3276,7 +3309,7 @@
     inset: 0;
     background: rgba(15, 23, 42, 0.25);
     z-index: 100;
-    pointer-events: none;
+    pointer-events: auto;
   }
 
   :global(.modal-window) {
