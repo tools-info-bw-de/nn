@@ -172,7 +172,10 @@
               ? (outputNeuronValues?.[node.node] ?? "-")
               : "-")}
           {#if nodeInferenceById?.[`l${node.layer}-n${node.node}`]?.tooltip}
-            <title>{nodeInferenceById?.[`l${node.layer}-n${node.node}`]?.tooltip}</title>
+            <title
+              >{nodeInferenceById?.[`l${node.layer}-n${node.node}`]
+                ?.tooltip}</title
+            >
           {/if}
         </text>
       {/if}

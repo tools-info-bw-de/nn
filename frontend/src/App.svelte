@@ -377,7 +377,9 @@
           const w = Number(weights[i] ?? 0);
           const aPrev = Number(prev[i] ?? 0);
           z += w * aPrev;
-          terms.push(`${formatInferenceNumber(w, 3)}*${formatInferenceNumber(aPrev, 3)}`);
+          terms.push(
+            `${formatInferenceNumber(w, 3)}*${formatInferenceNumber(aPrev, 3)}`,
+          );
         }
 
         const activated = evaluateActivation(actName, z);
@@ -387,8 +389,8 @@
           valueText: formatInferenceNumber(activated, 4),
           tooltip:
             `Layer ${layer + 1}, Neuron ${node + 1}\n` +
-            `z = (${terms.join(" + ")}) + ${formatInferenceNumber(bias, 3)} = ${formatInferenceNumber(z, 4)}\n` +
-            `a = ${actName}(z) = ${formatInferenceNumber(activated, 4)}`,
+            `summe = (${terms.join(" + ")}) + ${formatInferenceNumber(bias, 3)} = ${formatInferenceNumber(z, 4)}\n` +
+            `out = ${actName}(summe) = ${formatInferenceNumber(activated, 4)}`,
         };
       }
 
@@ -1221,7 +1223,11 @@
         return;
       }
 
-      const snapshot = buildNodeInferenceSnapshot(tab, payload.input, result.output);
+      const snapshot = buildNodeInferenceSnapshot(
+        tab,
+        payload.input,
+        result.output,
+      );
       liveOutputValuesByTabId = {
         ...liveOutputValuesByTabId,
         [tabId]: snapshot.outputValues,
@@ -2430,74 +2436,78 @@
       </button>
     </div>
 
-    <div class="loss-meta">
-      <div class="header">
-        <div class={isTraining ? "training" : ""}>
-          {isTraining ? "Training läuft." : "Training beendet."}
+    <div class="loss-group">
+      <div class="loss-meta">
+        <div class="header">
+          <div class={isTraining ? "training" : ""}>
+            {isTraining ? "Training läuft." : "Training beendet."}
+          </div>
+          {#if isTraining}
+            <span class="loader"></span>
+          {/if}
         </div>
-        {#if isTraining}
-          <span class="loader"></span>
-        {/if}
-      </div>
 
-      <div class="epochs tooltip">
-        Epochen <img
-          src={publicAsset("circle-question-solid-full.svg")}
-          alt=""
-          width="18"
-          height="18"
-        />: {activeTab.epochs}
-        <span class="tooltiptext"
-          >Jeder vollständige Trainingsdurchlauf durch alle Trainingsdaten ist
-          eine Epoche.</span
-        >
-      </div>
-
-      <div class="values">
-        <div class="tooltip">
-          <h4>
-            Fehlerwerte <img
-              src={publicAsset("circle-question-solid-full.svg")}
-              alt="Question"
-              width="18"
-              height="18"
-            />
-          </h4>
+        <div class="epochs tooltip">
+          Epochen <img
+            src={publicAsset("circle-question-solid-full.svg")}
+            alt=""
+            width="18"
+            height="18"
+          />: {activeTab.epochs}
           <span class="tooltiptext"
-            >Die Fehlerwerte zeigen die Abweichung zwischen den erwarteten
-            Ergebnissen (Trainingsdaten) und den tatsächlichen Werten des Netzes
-            an.</span
+            >Jeder vollständige Trainingsdurchlauf durch alle Trainingsdaten ist
+            eine Epoche.</span
           >
         </div>
-        <div>
-          Max:
-          {#if hasLoss}
-            {Math.max(...activeTab.lossHistory).toFixed(6)}
-          {:else}
-            ---
-          {/if}
-        </div>
-        <div>
-          Min:
-          {#if hasLoss}
-            {Math.min(...activeTab.lossHistory).toFixed(6)}
-          {:else}
-            ---
-          {/if}
-        </div>
-        <div class="last-loss">
-          Letzter:
-          {#if hasLoss}
-            {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(6)}
-          {:else}
-            ---
-          {/if}
+
+        <div class="values">
+          <div class="tooltip">
+            <h4>
+              Fehlerwerte <img
+                src={publicAsset("circle-question-solid-full.svg")}
+                alt="Question"
+                width="18"
+                height="18"
+              />
+            </h4>
+            <span class="tooltiptext"
+              >Die Fehlerwerte zeigen die Abweichung zwischen den erwarteten
+              Ergebnissen (Trainingsdaten) und den tatsächlichen Werten des
+              Netzes an.</span
+            >
+          </div>
+          <div>
+            Max:
+            {#if hasLoss}
+              {Math.max(...activeTab.lossHistory).toFixed(6)}
+            {:else}
+              ---
+            {/if}
+          </div>
+          <div>
+            Min:
+            {#if hasLoss}
+              {Math.min(...activeTab.lossHistory).toFixed(6)}
+            {:else}
+              ---
+            {/if}
+          </div>
+          <div class="last-loss">
+            Letzter:
+            {#if hasLoss}
+              {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(
+                6,
+              )}
+            {:else}
+              ---
+            {/if}
+          </div>
         </div>
       </div>
-    </div>
 
-    <div>
-      <FehlerwertChart {lossChart} />
+      <div>
+        <FehlerwertChart {lossChart} />
+      </div>
     </div>
   </section>
 
@@ -2656,6 +2666,25 @@
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+  .loss-group {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  @media (max-width: 1250px) {
+    .loss-group {
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 1050px) {
+    .toolbar-group {
+      height: inherit !important;
+    }
+  }
 
   .invalid {
     outline: 2px solid var(--danger);
@@ -3138,7 +3167,7 @@
     gap: 0.7rem;
     flex-wrap: wrap;
     margin-bottom: 0.5rem;
-    align-items: center;
+    align-items: end;
   }
 
   .graph-scroll {
@@ -3299,10 +3328,6 @@
 
     .layer-controls {
       grid-template-columns: 1fr;
-    }
-
-    :global(.button-group) {
-      width: 100%;
     }
 
     :global(.button-group button) {
