@@ -64,7 +64,7 @@
   let trainingTabId = "";
   let trainingTrainerId = "";
   let trainingEpochOffset = 0;
-  let trainingLossHistoryBase = [];
+  let trainingLossHistoryBase = {};
   let trainingLastLoss = null;
   let trainingDeviation = null;
   let highlightedConnectionId = $state("");
@@ -252,9 +252,84 @@
         { length: layers[layers.length - 1] },
         (_, idx) => `output${idx + 1}`,
       ),
-      lossHistory: [],
+      lossHistory: {},
       trainerId: "",
       state: null,
+    };
+  }
+
+  function normalizeLossHistoryMap(raw) {
+    if (Array.isArray(raw)) {
+      const mapped = {};
+      for (let i = 0; i < raw.length; i += 1) {
+        const loss = Number(raw[i]);
+        if (!Number.isFinite(loss)) {
+          continue;
+        }
+        mapped[String(i + 1)] = loss;
+      }
+      return mapped;
+    }
+
+    if (!raw || typeof raw !== "object") {
+      return {};
+    }
+
+    const mapped = {};
+    for (const [epochKey, lossValue] of Object.entries(raw)) {
+      const epoch = Number(epochKey);
+      const loss = Number(lossValue);
+      if (Number.isFinite(epoch) && epoch >= 1 && Number.isFinite(loss)) {
+        mapped[String(Math.floor(epoch))] = loss;
+      }
+    }
+    return mapped;
+  }
+
+  function mergeLossHistoryMaps(base, delta) {
+    return {
+      ...normalizeLossHistoryMap(base),
+      ...normalizeLossHistoryMap(delta),
+    };
+  }
+
+  function getLossEntries(history) {
+    const normalized = normalizeLossHistoryMap(history);
+    return Object.entries(normalized)
+      .map(([epochKey, loss]) => ({
+        epoch: Number(epochKey),
+        loss: Number(loss),
+      }))
+      .filter(
+        (entry) =>
+          Number.isFinite(entry.epoch) &&
+          entry.epoch >= 1 &&
+          Number.isFinite(entry.loss),
+      )
+      .sort((a, b) => a.epoch - b.epoch);
+  }
+
+  function getLastLossValue(history) {
+    const entries = getLossEntries(history);
+    return entries.length > 0 ? entries[entries.length - 1].loss : null;
+  }
+
+  function getLastLossEpoch(history) {
+    const entries = getLossEntries(history);
+    return entries.length > 0 ? entries[entries.length - 1].epoch : 0;
+  }
+
+  function getLossStats(history) {
+    const entries = getLossEntries(history);
+    if (entries.length === 0) {
+      return null;
+    }
+
+    const values = entries.map((entry) => entry.loss);
+    return {
+      max: Math.max(...values),
+      min: Math.min(...values),
+      last: entries[entries.length - 1].loss,
     };
   }
 
@@ -608,7 +683,7 @@
       tab.layers[0] = inputCount;
       tab.layers[tab.layers.length - 1] = outputCount;
       tab.state = null;
-      tab.lossHistory = [];
+      tab.lossHistory = {};
 
       normalizeTabNeuronIo(tab);
 
@@ -866,9 +941,7 @@
         tab.outputNeuronNames = outputNames;
         tab.inputNeuronValues = inputValues;
         tab.outputNeuronValues = outputValues;
-        tab.lossHistory = Array.isArray(network.loss_history)
-          ? [...network.loss_history]
-          : [];
+        tab.lossHistory = normalizeLossHistoryMap(network.loss_history);
         normalizeTabNeuronIo(tab);
         normalizeDatasetRows(tab);
       });
@@ -1169,7 +1242,7 @@
         { length: t.layers[t.layers.length - 1] },
         () => "-",
       );
-      t.lossHistory = [];
+      t.lossHistory = {};
     });
 
     liveOutputValuesByTabId = {
@@ -1266,9 +1339,10 @@
       return;
     }
 
-    const combinedHistory = Array.isArray(snapshot.loss_history)
-      ? [...trainingLossHistoryBase, ...snapshot.loss_history]
-      : trainingLossHistoryBase;
+    const combinedHistory = mergeLossHistoryMaps(
+      trainingLossHistoryBase,
+      snapshot.loss_history,
+    );
 
     updateTab(tabId, (next) => {
       next.state = snapshot.state;
@@ -1385,19 +1459,14 @@
       trainingTrainerId = trainerId;
       finalTabId = active.id;
       finalTrainerId = trainerId;
-      trainingLossHistoryBase = Array.isArray(active.lossHistory)
-        ? [...active.lossHistory]
-        : [];
+      trainingLossHistoryBase = normalizeLossHistoryMap(active.lossHistory);
       const persistedEpochs = Number(active.epochs);
       trainingEpochOffset =
         Number.isFinite(persistedEpochs) && persistedEpochs >= 0
           ? Math.floor(persistedEpochs)
-          : trainingLossHistoryBase.length;
+          : getLastLossEpoch(trainingLossHistoryBase);
       activeTab.epochs = trainingEpochOffset;
-      trainingLastLoss =
-        trainingLossHistoryBase.length > 0
-          ? Number(trainingLossHistoryBase[trainingLossHistoryBase.length - 1])
-          : null;
+      trainingLastLoss = getLastLossValue(trainingLossHistoryBase);
       trainingDeviation = null;
 
       updateTab(active.id, (next) => {
@@ -1423,9 +1492,10 @@
         const currentDeviation = Number(trainStatus.deviation ?? 0);
         const currentEpochsDone =
           trainingEpochOffset + Number(trainStatus.epochs_done ?? 0);
-        const combinedHistory = Array.isArray(trainStatus.loss_history)
-          ? [...trainingLossHistoryBase, ...trainStatus.loss_history]
-          : trainingLossHistoryBase;
+        const combinedHistory = mergeLossHistoryMaps(
+          trainingLossHistoryBase,
+          trainStatus.loss_history,
+        );
 
         updateTab(trainingTabId, (next) => {
           next.state = trainStatus.state;
@@ -1470,7 +1540,7 @@
       trainingTrainerId = "";
       trainingTabId = "";
       trainingEpochOffset = 0;
-      trainingLossHistoryBase = [];
+      trainingLossHistoryBase = {};
     }
   }
 
@@ -1701,7 +1771,7 @@
     updateActiveTab((tab) => {
       tab.layers[layerIndex] = nextCount;
       tab.state = null;
-      tab.lossHistory = [];
+      tab.lossHistory = {};
       tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
@@ -1716,7 +1786,7 @@
     updateActiveTab((tab) => {
       tab.layers.splice(tab.layers.length - 1, 0, 3);
       tab.state = null;
-      tab.lossHistory = [];
+      tab.lossHistory = {};
       tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
@@ -1734,7 +1804,7 @@
       }
       tab.layers.splice(tab.layers.length - 2, 1);
       tab.state = null;
-      tab.lossHistory = [];
+      tab.lossHistory = {};
       tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
@@ -1920,7 +1990,8 @@
     ];
   });
 
-  let hasLoss = $derived(activeTab?.lossHistory?.length > 0);
+  let hasLoss = $derived(getLossEntries(activeTab?.lossHistory).length > 0);
+  let lossStats = $derived(getLossStats(activeTab?.lossHistory));
 
   function startTrainingWindowDrag(event) {
     if (event.target?.closest("button")) {
@@ -2025,7 +2096,8 @@
   }
 
   let lossChart = $derived.by(() => {
-    const history = activeTab?.lossHistory || [];
+    const historyEntries = getLossEntries(activeTab?.lossHistory);
+    const historyValues = historyEntries.map((entry) => entry.loss);
 
     const width = 640;
     const height = 220;
@@ -2038,21 +2110,33 @@
     const plotHeight = height - padTop - padBottom;
 
     const yMin = 0;
-    const historyMax = history.length > 0 ? Math.max(...history) : 0;
+    const historyMax =
+      historyValues.length > 0 ? Math.max(...historyValues) : 0;
     const targetHeightRatio = 0.85;
     const yMax = historyMax > 0 ? historyMax / targetHeightRatio : 1;
     const yRange = yMax - yMin || 1;
 
-    const xMinEpoch = 1;
-    const xMaxEpoch = Math.max(2, history.length);
+    const firstEpoch = historyEntries.length > 0 ? historyEntries[0].epoch : 1;
+    const lastEpoch =
+      historyEntries.length > 0
+        ? historyEntries[historyEntries.length - 1].epoch
+        : 1;
+    const xMinEpoch = firstEpoch;
+    const xMaxEpoch = Math.max(
+      xMinEpoch + 1,
+      Number(activeTab?.epochs || 0),
+      lastEpoch,
+    );
     const xRange = xMaxEpoch - xMinEpoch || 1;
 
     const toX = (epoch) => padLeft + ((epoch - xMinEpoch) / xRange) * plotWidth;
     const toY = (value) => padTop + (1 - (value - yMin) / yRange) * plotHeight;
 
     const linePoints =
-      history.length >= 2
-        ? history.map((v, i) => `${toX(i + 1)},${toY(v)}`).join(" ")
+      historyEntries.length >= 2
+        ? historyEntries
+            .map((entry) => `${toX(entry.epoch)},${toY(entry.loss)}`)
+            .join(" ")
         : "";
 
     const yTickCount = 4;
@@ -2103,7 +2187,7 @@
       linePoints,
       xAxisY: padTop + plotHeight,
       yAxisX: padLeft,
-      hasLine: history.length >= 2,
+      hasLine: historyEntries.length >= 2,
     };
   });
 
@@ -2172,7 +2256,7 @@
       tab.layers[tab.layers.length - 1] = outputCount;
       tab.outputNeuronNames = ["a", "b", "c", "d", "e", "f", "g"];
       tab.state = null;
-      tab.lossHistory = [];
+      tab.lossHistory = {};
       tab.epochs = 0;
       normalizeTabNeuronIo(tab);
       tab.outputNeuronValues = Array.from({ length: outputCount }, () => "-");
@@ -2478,7 +2562,7 @@
           <div>
             Max:
             {#if hasLoss}
-              {Math.max(...activeTab.lossHistory).toFixed(6)}
+              {lossStats.max.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -2486,7 +2570,7 @@
           <div>
             Min:
             {#if hasLoss}
-              {Math.min(...activeTab.lossHistory).toFixed(6)}
+              {lossStats.min.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -2494,9 +2578,7 @@
           <div class="last-loss">
             Letzter:
             {#if hasLoss}
-              {activeTab.lossHistory[activeTab.lossHistory.length - 1].toFixed(
-                6,
-              )}
+              {lossStats.last.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -3255,6 +3337,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    width: 150px;
   }
 
   .loss-meta > .header {

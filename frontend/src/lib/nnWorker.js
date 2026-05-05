@@ -5,6 +5,7 @@ let runtimeReadyPromise = null;
 let trainerCounter = 0;
 const trainers = new Map();
 let runtimeBaseUrl = "/";
+const MAX_LOSS_HISTORY_POINTS = 1000;
 
 function normalizeBaseUrl(raw) {
   const value = String(raw || "/").trim();
@@ -164,6 +165,55 @@ function computeMetrics(state, dataset) {
   };
 }
 
+function cloneLossHistoryMap(history) {
+  return { ...(history || {}) };
+}
+
+function compactLossHistoryIfNeeded(history) {
+  const entries = Object.entries(history)
+    .map(([epochKey, loss]) => ({
+      epoch: Number(epochKey),
+      loss: Number(loss),
+    }))
+    .filter(
+      (entry) =>
+        Number.isFinite(entry.epoch) &&
+        entry.epoch >= 1 &&
+        Number.isFinite(entry.loss),
+    )
+    .sort((a, b) => a.epoch - b.epoch);
+
+  if (entries.length <= MAX_LOSS_HISTORY_POINTS) {
+    return history;
+  }
+
+  const minEpoch = entries[0].epoch;
+  const maxEpoch = entries[entries.length - 1].epoch;
+  const epochRange = Math.max(1, maxEpoch - minEpoch);
+
+  const compacted = {};
+  for (let i = 0; i < MAX_LOSS_HISTORY_POINTS; i += 1) {
+    const targetEpoch =
+      minEpoch + (i * epochRange) / (MAX_LOSS_HISTORY_POINTS - 1);
+
+    let best = entries[0];
+    let bestDist = Math.abs(best.epoch - targetEpoch);
+
+    for (let j = 1; j < entries.length; j += 1) {
+      const candidate = entries[j];
+      const dist = Math.abs(candidate.epoch - targetEpoch);
+      if (dist < bestDist) {
+        best = candidate;
+        bestDist = dist;
+      }
+    }
+
+    compacted[String(best.epoch)] = best.loss;
+  }
+
+  return compacted;
+}
+
 function scheduleTrainerStep(trainerId) {
   const trainer = trainers.get(trainerId);
   if (!trainer || !trainer.running || trainer.scheduled) {
@@ -210,7 +260,11 @@ function runTrainerBatch(trainerId) {
 
       trainer.finalLoss = metrics.loss;
       trainer.hasFinalLoss = true;
-      trainer.lossHistory.push(metrics.loss);
+      trainer.lossHistory[String(trainer.epochsDone)] = metrics.loss;
+
+      if (trainer.epochsDone % 1000 === 0) {
+        trainer.lossHistory = compactLossHistoryIfNeeded(trainer.lossHistory);
+      }
 
       trainer.deviation = metrics.maxDeviation;
 
@@ -255,7 +309,7 @@ function handleTrainerMethod(method, payload) {
       stopRequested: false,
       scheduled: false,
       epochsDone: 0,
-      lossHistory: [],
+      lossHistory: {},
       finalLoss: 0,
       hasFinalLoss: false,
       deviation: 0,
@@ -282,7 +336,7 @@ function handleTrainerMethod(method, payload) {
       trainer_id: trainer.id,
       running: trainer.running,
       epochs_done: trainer.epochsDone,
-      loss_history: trainer.lossHistory,
+      loss_history: cloneLossHistoryMap(trainer.lossHistory),
       final_loss: trainer.finalLoss,
       has_final_loss: trainer.hasFinalLoss,
       deviation: trainer.deviation,

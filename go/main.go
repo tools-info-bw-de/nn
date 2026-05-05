@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
+	"strconv"
 	"sync"
 	"syscall/js"
 	"time"
@@ -45,11 +47,11 @@ type ForwardRequest struct {
 }
 
 type TrainResponse struct {
-	State       NetworkState `json:"state"`
-	LossHistory []float64    `json:"loss_history"`
-	FinalLoss   float64      `json:"final_loss"`
-	Samples     int          `json:"samples"`
-	Epochs      int          `json:"epochs"`
+	State       NetworkState       `json:"state"`
+	LossHistory map[string]float64 `json:"loss_history"`
+	FinalLoss   float64            `json:"final_loss"`
+	Samples     int                `json:"samples"`
+	Epochs      int                `json:"epochs"`
 }
 
 type ForwardResponse struct {
@@ -68,15 +70,15 @@ type TrainerCommandRequest struct {
 }
 
 type TrainerStatusResponse struct {
-	TrainerID    string       `json:"trainer_id"`
-	Running      bool         `json:"running"`
-	EpochsDone   int          `json:"epochs_done"`
-	LossHistory  []float64    `json:"loss_history"`
-	FinalLoss    float64      `json:"final_loss"`
-	HasFinalLoss bool         `json:"has_final_loss"`
-	Deviation    float64      `json:"deviation"`
-	State        NetworkState `json:"state"`
-	Error        string       `json:"error,omitempty"`
+	TrainerID    string             `json:"trainer_id"`
+	Running      bool               `json:"running"`
+	EpochsDone   int                `json:"epochs_done"`
+	LossHistory  map[string]float64 `json:"loss_history"`
+	FinalLoss    float64            `json:"final_loss"`
+	HasFinalLoss bool               `json:"has_final_loss"`
+	Deviation    float64            `json:"deviation"`
+	State        NetworkState       `json:"state"`
+	Error        string             `json:"error,omitempty"`
 }
 
 type Network struct {
@@ -111,11 +113,79 @@ type Trainer struct {
 	running     bool
 	stop        bool
 	epochsDone  int
-	lossHistory []float64
+	lossHistory map[string]float64
 	finalLoss   float64
 	hasFinal    bool
 	deviation   float64
 	lastErr     string
+}
+
+const maxLossHistoryPoints = 1000
+
+func cloneLossHistoryMap(src map[string]float64) map[string]float64 {
+	if len(src) == 0 {
+		return map[string]float64{}
+	}
+	dst := make(map[string]float64, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func compactLossHistoryMap(history map[string]float64, maxPoints int) map[string]float64 {
+	if len(history) <= maxPoints {
+		return history
+	}
+
+	type lossPoint struct {
+		epoch int
+		loss  float64
+	}
+
+	points := make([]lossPoint, 0, len(history))
+	for k, v := range history {
+		epoch, err := strconv.Atoi(k)
+		if err != nil || epoch < 1 || math.IsNaN(v) || math.IsInf(v, 0) {
+			continue
+		}
+		points = append(points, lossPoint{epoch: epoch, loss: v})
+	}
+
+	if len(points) <= maxPoints {
+		return history
+	}
+
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].epoch < points[j].epoch
+	})
+
+	minEpoch := points[0].epoch
+	maxEpoch := points[len(points)-1].epoch
+	epochRange := maxEpoch - minEpoch
+	if epochRange < 1 {
+		epochRange = 1
+	}
+
+	compacted := make(map[string]float64, maxPoints)
+	for i := 0; i < maxPoints; i++ {
+		targetEpoch := float64(minEpoch) + float64(i*epochRange)/float64(maxPoints-1)
+
+		best := points[0]
+		bestDist := math.Abs(float64(best.epoch) - targetEpoch)
+		for j := 1; j < len(points); j++ {
+			candidate := points[j]
+			dist := math.Abs(float64(candidate.epoch) - targetEpoch)
+			if dist < bestDist {
+				best = candidate
+				bestDist = dist
+			}
+		}
+
+		compacted[strconv.Itoa(best.epoch)] = best.loss
+	}
+
+	return compacted
 }
 
 func clone3D(src [][][]float64) [][][]float64 {
@@ -429,7 +499,7 @@ func (n *Network) Train(dataset []Sample, epochs int, lrOverride *float64, shuff
 	}
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	lossHistory := make([]float64, 0, epochs)
+	lossHistory := make(map[string]float64, epochs)
 
 	for epoch := 0; epoch < epochs; epoch++ {
 		if shuffle {
@@ -479,10 +549,10 @@ func (n *Network) Train(dataset []Sample, epochs int, lrOverride *float64, shuff
 			}
 		}
 
-		lossHistory = append(lossHistory, epochLoss/float64(len(dataset)))
+		lossHistory[strconv.Itoa(epoch+1)] = epochLoss / float64(len(dataset))
 	}
 
-	finalLoss := lossHistory[len(lossHistory)-1]
+	finalLoss := lossHistory[strconv.Itoa(epochs)]
 	return TrainResponse{
 		LossHistory: lossHistory,
 		FinalLoss:   finalLoss,
@@ -543,7 +613,10 @@ func (t *Trainer) runLoop() {
 		}
 
 		t.epochsDone += 1
-		t.lossHistory = append(t.lossHistory, res.FinalLoss)
+		t.lossHistory[strconv.Itoa(t.epochsDone)] = res.FinalLoss
+		if t.epochsDone%1000 == 0 {
+			t.lossHistory = compactLossHistoryMap(t.lossHistory, maxLossHistoryPoints)
+		}
 		t.finalLoss = res.FinalLoss
 		t.hasFinal = true
 		t.deviation = deviation
@@ -659,7 +732,7 @@ func trainerInitJS(_ js.Value, args []js.Value) any {
 		dataset:      append([]Sample(nil), req.Dataset...),
 		learningRate: req.LearningRate,
 		shuffle:      req.Shuffle,
-		lossHistory:  []float64{},
+		lossHistory:  map[string]float64{},
 	}
 
 	trainersM.Lock()
@@ -712,7 +785,7 @@ func trainerStatusJS(_ js.Value, args []js.Value) any {
 		TrainerID:    trainer.id,
 		Running:      trainer.running,
 		EpochsDone:   trainer.epochsDone,
-		LossHistory:  append([]float64(nil), trainer.lossHistory...),
+		LossHistory:  cloneLossHistoryMap(trainer.lossHistory),
 		FinalLoss:    trainer.finalLoss,
 		HasFinalLoss: trainer.hasFinal,
 		Deviation:    trainer.deviation,
