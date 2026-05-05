@@ -1212,6 +1212,16 @@
     let finalTrainerId = "";
     let lastObservedStatus = null;
 
+    console.log(activeTab.learningRate);
+    // check if Lernrate valid
+    if (
+      isNaN(Number(activeTab.learningRate)) ||
+      Number(activeTab.learningRate) <= 0
+    ) {
+      alert("Lernrate muss eine Zahl > 0 sein.");
+      return;
+    }
+
     try {
       await initWasm();
       await requireApi();
@@ -1221,9 +1231,7 @@
       normalizeDatasetRows(active);
       const dataset = currentDatasetRows(active);
       if (!Array.isArray(dataset) || dataset.length === 0) {
-        throw new Error(
-          "Trainingsdaten müssen ein nicht-leeres JSON-Array sein.",
-        );
+        throw new Error("Trainingsdaten fehlerhaft.");
       }
 
       const initResult = await callWorker("nnTrainerInit", {
@@ -1532,9 +1540,19 @@
     })),
   );
 
+  let learningRateInvalid = $state(false);
+
   function setActiveLearningRate(value) {
     updateActiveTab((tab) => {
-      tab.learningRate = Number(value);
+      if (value.includes(",")) {
+        tab.learningRate = value.replace(",", ".");
+        value = tab.learningRate;
+      }
+      if (isNaN(Number(value)) || Number(value) <= 0) {
+        learningRateInvalid = true;
+        return;
+      }
+      learningRateInvalid = false;
       if (tab.state) {
         tab.state.learning_rate = Number(value);
       }
@@ -2218,13 +2236,12 @@
           >
         </div>
         <input
-          type="number"
-          min="0.00"
-          step="0.1"
-          value={activeTab.learningRate}
+          bind:value={activeTab.learningRate}
+          class={learningRateInvalid ? "invalid" : ""}
           oninput={(e) => setActiveLearningRate(e.currentTarget.value)}
         />
-      </label>
+      </label><!--           inputmode="numeric"
+ -->
     </div>
 
     <div class="toolbar-group">
@@ -2508,6 +2525,10 @@
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+  .invalid {
+    outline: 2px solid var(--danger);
+  }
 
   .network-title {
     display: inline-flex;
