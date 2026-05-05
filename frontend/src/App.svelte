@@ -2341,7 +2341,11 @@
     <div class="tab-row">
       {#each tabs as tab}
         <div class={`tab-pill ${tab.id === activeTabId ? "active" : ""}`}>
-          <button class="tab-open" onclick={() => activateTab(tab.id)}>
+          <button
+            class="tab-open"
+            disabled={busy || isTraining}
+            onclick={() => activateTab(tab.id)}
+          >
             {#if renamingTabId === tab.id}
               <input
                 class="rename-input"
@@ -2374,7 +2378,11 @@
           >
         </div>
       {/each}
-      <button class="tab-add btn-hover" onclick={addTab}>+ Netz</button>
+      <button
+        disabled={busy || isTraining}
+        class="tab-add btn-hover"
+        onclick={addTab}>+ Netz</button
+      >
     </div>
   </header>
 
@@ -3270,7 +3278,7 @@
   }
 
   :global(button:disabled) {
-    cursor: not-allowed;
+    cursor: not-allowed !important;
     opacity: 0.7;
     transform: none;
   }
