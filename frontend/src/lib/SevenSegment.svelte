@@ -197,7 +197,9 @@
     background-color: #bebebe;
     transition: opacity 0.2s;
     color: black;
-    transition: 0.1s ease;
+    transition:
+      background-color 0.1s ease,
+      color 0.1s ease;
     user-select: none;
   }
 

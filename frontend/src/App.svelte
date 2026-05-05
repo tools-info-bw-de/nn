@@ -2375,11 +2375,10 @@
           class={learningRateInvalid ? "invalid" : ""}
           oninput={(e) => setActiveLearningRate(e.currentTarget.value)}
         />
-      </label><!--           inputmode="numeric"
- -->
+      </label>
     </div>
 
-    <div class="toolbar-group">
+    <div class="toolbar-group toolbar-group-middle">
       <button
         class="btn-hover"
         onclick={openDatasetModal}
@@ -2666,6 +2665,10 @@
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+  .toolbar-group-middle {
+    width: 240px;
+  }
 
   .loss-group {
     display: flex;

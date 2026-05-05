@@ -375,12 +375,12 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.65);
+    align-self: center;
   }
 
   .dataset-grid {
     width: 100%;
     border-collapse: collapse;
-    min-width: 700px;
   }
 
   .dataset-grid th,
