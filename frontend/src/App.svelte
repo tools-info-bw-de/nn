@@ -2620,7 +2620,7 @@
 
   <section class="network-graph-wrap">
     <div class="network-title">
-      <h2>Live-Netzansicht</h2>
+      <h2>Neuronales Netz</h2>
       <div>(Klicken zum Bearbeiten)</div>
     </div>
     <div class="layer-controls">
@@ -3173,10 +3173,10 @@
   }
 
   .page-info {
-    position: fixed;
+    position: absolute;
     top: 0.8rem;
     right: 0.8rem;
-    z-index: 200;
+    z-index: 20;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
