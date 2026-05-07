@@ -18,6 +18,7 @@ const (
 	ActivationBinary   Activation = "binary"
 	ActivationLogistic Activation = "logistic"
 	ActivationReLU     Activation = "relu"
+	ActivationLinear   Activation = "linear"
 )
 
 type NetworkConfig struct {
@@ -307,6 +308,8 @@ func normalizeActivation(raw string) (Activation, error) {
 		return ActivationLogistic, nil
 	case "relu":
 		return ActivationReLU, nil
+	case "linear":
+		return ActivationLinear, nil
 	default:
 		return "", fmt.Errorf("unbekannte Aktivierungsfunktion: %s", raw)
 	}
@@ -326,6 +329,8 @@ func activate(act Activation, x float64) float64 {
 			return x
 		}
 		return 0
+	case ActivationLinear:
+		return x
 	default:
 		return x
 	}
