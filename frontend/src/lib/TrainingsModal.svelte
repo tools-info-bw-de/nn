@@ -107,7 +107,24 @@
 
   <div class="dataset-actions">
     <div class="button-group">
-      <span>Trainingsdaten:</span>
+      <span class="tooltip"
+        >Trainingsdaten <img
+          src={publicAsset("circle-question-solid-full.svg")}
+          alt="Question"
+          width="18"
+          height="18"
+        />
+        <span class="tooltiptext tooltiptext-below"
+          >Trainingsdaten sind in einer CSV-Datei gespeichert. Die erste Zeile <b
+            >muss</b
+          >
+          in der Form <code>in:x,out:y</code> sein (wobei x/y die Anzahl der
+          Input-/Output-Neuronen sind).<br />
+          Die zweite Zeile <b>kann</b> die Namen der Neuronen enthalten (oder
+          diese Zeile fehlt und es werden Standardnamen genutzt). <br />
+          Danach folgen die Trainingsdaten. Separator ist immer das normale Komma.
+        </span>:</span
+      >
 
       <button class="btn-hover" onclick={exportDatasetCsv}>
         <img

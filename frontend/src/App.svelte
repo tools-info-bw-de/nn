@@ -3356,16 +3356,15 @@
     font-size: 20px;
   }
 
-  .tooltip,
-  .tooltip > h4 {
+  :global(.tooltip, .tooltip > h4) {
     display: inline-flex;
   }
 
-  .tooltip {
+  :global(.tooltip) {
     position: relative;
   }
 
-  .tooltiptext {
+  :global(.tooltiptext) {
     visibility: hidden;
     width: 250px;
     background-color: black;
@@ -3381,13 +3380,13 @@
     font-size: 14px;
   }
 
-  .tooltiptext-below {
+  :global(.tooltiptext-below) {
     bottom: auto;
     top: 100%;
     margin-top: 10px; /* Kleiner Abstand nach unten */
   }
 
-  .tooltiptext::after {
+  :global(.tooltiptext::after) {
     content: "";
     position: absolute;
     top: 100%;
@@ -3398,13 +3397,13 @@
     border-color: black transparent transparent transparent;
   }
 
-  .tooltiptext-below::after {
+  :global(.tooltiptext-below::after) {
     top: auto;
     bottom: 100%;
     border-color: transparent transparent black transparent;
   }
 
-  .tooltip:hover .tooltiptext {
+  :global(.tooltip:hover .tooltiptext) {
     visibility: visible;
   }
 
