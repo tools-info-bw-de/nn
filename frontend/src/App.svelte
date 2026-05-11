@@ -537,7 +537,7 @@
           const aPrev = Number(prev[i] ?? 0);
           z += w * aPrev;
           terms.push(
-            `${formatInferenceNumber(w, 3)}*${formatInferenceNumber(aPrev, 3)}`,
+            `${formatInferenceNumber(aPrev, 3)}*${formatInferenceNumber(w, 3)}`,
           );
         }
 
@@ -2785,6 +2785,13 @@
 
         <hr />
 
+        <p>
+          Bei Fragen, Problemen, Bugs, ... entweder ein Issue auf GitHub
+          erstellen oder mir einfach eine Mail schreiben.
+        </p>
+
+        <hr />
+
         <div class="about">
           <div>
             Quellcode auf <a
@@ -2803,7 +2810,11 @@
             >
           </div>
 
-          <div>Marco Kümmel</div>
+          <div>
+            <a href="mailto:marco.kuemmel@bs-gym-wgt.seminar-bw.de"
+              >Marco Kümmel</a
+            >
+          </div>
         </div>
       </div>
     {/if}
