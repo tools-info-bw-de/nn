@@ -1530,6 +1530,81 @@
 
   // @ts-ignore
   async function createStateForTab(tabId) {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (!tab) {
+      throw new Error("Tab nicht gefunden.");
+    }
+
+    const zeroState = buildPlaceholderState(tab);
+
+    // @ts-ignore
+    updateTab(tabId, (t) => {
+      t.state = clone(zeroState);
+      normalizeTabNeuronIo(t);
+      t.outputNeuronValues = Array.from(
+        { length: t.layers[t.layers.length - 1] },
+        () => "-",
+      );
+      t.lossHistory = {};
+    });
+
+    liveOutputValuesByTabId = {
+      ...liveOutputValuesByTabId,
+      [tabId]: Array.from(
+        {
+          length:
+            zeroState?.layers?.[zeroState.layers.length - 1] ??
+            tab.layers[tab.layers.length - 1] ??
+            0,
+        },
+        () => "-",
+      ),
+    };
+    liveNodeInferenceByTabId = {
+      ...liveNodeInferenceByTabId,
+      [tabId]: {},
+    };
+
+    await runLiveInferenceForTab(tabId, { ensureState: false });
+  }
+
+  // @ts-ignore
+  function isZeroInitializedState(state) {
+    if (!state || typeof state !== "object") {
+      return false;
+    }
+
+    const weights = Array.isArray(state.weights) ? state.weights : [];
+    const biases = Array.isArray(state.biases) ? state.biases : [];
+
+    for (const layerWeights of weights) {
+      const nodes = Array.isArray(layerWeights) ? layerWeights : [];
+      for (const nodeWeights of nodes) {
+        const values = Array.isArray(nodeWeights) ? nodeWeights : [];
+        for (const raw of values) {
+          const value = Number(raw);
+          if (!Number.isFinite(value) || value !== 0) {
+            return false;
+          }
+        }
+      }
+    }
+
+    for (const layerBiases of biases) {
+      const values = Array.isArray(layerBiases) ? layerBiases : [];
+      for (const raw of values) {
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value !== 0) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  // @ts-ignore
+  async function randomizeStateForTab(tabId) {
     await initWasm();
     await requireApi();
 
@@ -1633,7 +1708,7 @@
   function randomizeActiveState() {
     return withBusy(async () => {
       const active = getActiveTab();
-      await createStateForTab(active.id);
+      await randomizeStateForTab(active.id);
       // @ts-ignore
       updateTab(active.id, (next) => {
         next.epochs = 0;
@@ -1754,7 +1829,12 @@
       await requireApi();
       await ensureStateForActiveTab();
 
-      const active = getActiveTab();
+      let active = getActiveTab();
+      if (isZeroInitializedState(active.state)) {
+        await randomizeStateForTab(active.id);
+        active = getActiveTab();
+      }
+
       normalizeDatasetRows(active);
       const dataset = currentDatasetRows(active);
       if (!Array.isArray(dataset) || dataset.length === 0) {
@@ -2276,10 +2356,14 @@
         throw new Error("Ungültiger Zahlenwert für Gewicht.");
       }
 
+      const tabId = tab.id;
+
       // @ts-ignore
-      updateActiveTab((next) => {
+      updateTab(tabId, (next) => {
         next.state.weights[conn.layer][conn.to][conn.from] = num;
       });
+
+      await runLiveInferenceForTab(tabId, { ensureState: false });
       status = `${tab.name}: Gewicht angepasst.`;
     });
   }
@@ -2315,10 +2399,14 @@
         throw new Error("Ungültiger Zahlenwert für Bias.");
       }
 
+      const tabId = tab.id;
+
       // @ts-ignore
-      updateActiveTab((next) => {
+      updateTab(tabId, (next) => {
         next.state.biases[bLayer][nodeIndex] = num;
       });
+
+      await runLiveInferenceForTab(tabId, { ensureState: false });
       status = `${tab.name}: Bias angepasst.`;
     });
   }
