@@ -206,11 +206,11 @@
   }
 
   .edge.pos {
-    stroke: #1f8f6a;
+    stroke: #1078ff;
   }
 
   .edge.neg {
-    stroke: #bf5d43;
+    stroke: #ff8943;
   }
 
   .edge-value {
