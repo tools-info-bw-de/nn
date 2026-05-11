@@ -4,6 +4,7 @@
   import NetworkGraph from "./lib/NetworkGraph.svelte";
   import TrainingsModal from "./lib/TrainingsModal.svelte";
   import SevenSegment from "./lib/SevenSegment.svelte";
+  import * as zip from "@zip.js/zip.js";
 
   const defaultDataset = JSON.stringify(
     [
@@ -110,6 +111,8 @@
   const nnWorkerPending = new Map();
   // @ts-ignore
   let networkImportInputEl = null;
+  // @ts-ignore
+  let projectImportInputEl = null;
 
   function resetWorkerInstance() {
     // @ts-ignore
@@ -645,10 +648,9 @@
     );
 
     if (!match) {
-      console.log("aah");
-      trainingImportError =
-        "CSV-Import abgebrochen: Erste Zeile muss im Format <code>in:x,out:y</code> vorliegen (z. B. <code>in:3,out:2</code> -> 3 Input- und 2 Output-Neuronen).";
-      return;
+      throw new Error(
+        "CSV-Import abgebrochen: Erste Zeile muss im Format in:x,out:y vorliegen (z. B. in:3,out:2).",
+      );
     }
 
     const inputCount = Number(match[1]);
@@ -666,6 +668,29 @@
     }
 
     return { inputCount, outputCount };
+  }
+
+  // @ts-ignore
+  function secondLineLooksLikeNames(lines, delimiter, inputCount, outputCount) {
+    const neededColumns = inputCount + outputCount;
+    if (lines.length < 2) {
+      return false;
+    }
+
+    const values = splitCsvLine(lines[1], delimiter);
+    if (values.length < neededColumns) {
+      throw new Error(
+        `CSV-Zeile 2 hat zu wenige Spalten (erwartet ${neededColumns}).`,
+      );
+    }
+
+    for (const value of values.slice(0, neededColumns)) {
+      if (!Number.isFinite(Number(value))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function parseImportRows(
@@ -770,14 +795,27 @@
   function applyImportedDataset(
     // @ts-ignore
     parsedRows,
-    importedNames = null,
-    adoptNames = false,
+    // @ts-ignore
+    importedNames,
+    // @ts-ignore
+    adoptNames,
+    // @ts-ignore
+    keepCurrentState,
   ) {
+    importedNames = importedNames || null;
+    adoptNames = Boolean(adoptNames);
+    keepCurrentState = Boolean(keepCurrentState);
+
     const inputCount = pendingImportInputCount;
     const outputCount = pendingImportOutputCount;
 
     // @ts-ignore
     updateActiveTab((tab) => {
+      const previousState = tab.state ? clone(tab.state) : null;
+      const previousLossHistory = normalizeLossHistoryMap(tab.lossHistory);
+      const previousOutputValues = Array.isArray(tab.outputNeuronValues)
+        ? [...tab.outputNeuronValues]
+        : [];
       const previousInputNames = Array.isArray(tab.inputNeuronNames)
         ? [...tab.inputNeuronNames]
         : [];
@@ -787,8 +825,27 @@
 
       tab.layers[0] = inputCount;
       tab.layers[tab.layers.length - 1] = outputCount;
-      tab.state = null;
-      tab.lossHistory = {};
+
+      let matchesLayerShape = false;
+      if (
+        keepCurrentState &&
+        previousState &&
+        Array.isArray(previousState.layers) &&
+        previousState.layers.length === tab.layers.length
+      ) {
+        matchesLayerShape = true;
+        for (let idx = 0; idx < tab.layers.length; idx += 1) {
+          if (Number(previousState.layers[idx]) !== Number(tab.layers[idx])) {
+            matchesLayerShape = false;
+            break;
+          }
+        }
+      }
+
+      const keepsStateShape = keepCurrentState && matchesLayerShape;
+
+      tab.state = keepsStateShape ? previousState : null;
+      tab.lossHistory = keepsStateShape ? previousLossHistory : {};
 
       normalizeTabNeuronIo(tab);
 
@@ -816,7 +873,12 @@
 
       normalizeTabNeuronIo(tab);
       normalizeDatasetRows(tab);
-      tab.outputNeuronValues = Array.from({ length: outputCount }, () => "-");
+      tab.outputNeuronValues = keepsStateShape
+        ? Array.from(
+            { length: outputCount },
+            (_, idx) => previousOutputValues[idx] ?? "-",
+          )
+        : Array.from({ length: outputCount }, () => "-");
     });
   }
 
@@ -888,7 +950,7 @@
     });
   }
 
-  function exportDatasetCsv() {
+  function createDataSetCsv() {
     const active = getActiveTab();
     const rows = currentDatasetRows(active);
     const inputCount = active.layers[0] ?? 0;
@@ -913,9 +975,14 @@
       lines.push(values.join(","));
     }
 
-    const blob = new Blob([lines.join("\n")], {
+    return new Blob([lines.join("\n")], {
       type: "text/csv;charset=utf-8",
     });
+  }
+
+  function exportDatasetCsv() {
+    const active = getActiveTab();
+    const blob = createDataSetCsv();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -924,7 +991,7 @@
     URL.revokeObjectURL(url);
   }
 
-  function exportCurrentNetwork() {
+  function createCurrentNetworkBlob() {
     const active = getActiveTab();
     const state = active.state
       ? clone(active.state)
@@ -959,9 +1026,14 @@
     };
 
     const text = JSON.stringify(payload, null, 2);
-    const blob = new Blob([text], {
+    return new Blob([text], {
       type: "application/json;charset=utf-8",
     });
+  }
+
+  function exportCurrentNetwork() {
+    const active = getActiveTab();
+    const blob = createCurrentNetworkBlob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1002,6 +1074,114 @@
   }
 
   // @ts-ignore
+  async function importNetworkFromJsonText(text) {
+    const parsed = JSON.parse(text);
+    const network = parsed?.network;
+
+    assertLoadedNetworkShape(network);
+
+    const layers = clone(network.layers);
+    const inputCount = layers[0];
+    const outputCount = layers[layers.length - 1];
+
+    const inputNames = Array.from({ length: inputCount }, (_, idx) => {
+      const raw = String(network.input_names?.[idx] ?? "").trim();
+      return raw.length > 0 ? raw : `input${idx + 1}`;
+    });
+
+    const outputNames = Array.from({ length: outputCount }, (_, idx) => {
+      const raw = String(network.output_names?.[idx] ?? "").trim();
+      return raw.length > 0 ? raw : `output${idx + 1}`;
+    });
+
+    const inputValues = Array.from({ length: inputCount }, (_, idx) =>
+      String(network.input_values?.[idx] ?? "0"),
+    );
+
+    const outputValues = Array.from({ length: outputCount }, (_, idx) =>
+      String(network.output_values?.[idx] ?? "-"),
+    );
+
+    // @ts-ignore
+    updateActiveTab((tab) => {
+      tab.name = String(parsed?.name ?? tab.name);
+      const importedEpochs = Number(parsed?.training_epochs);
+      tab.epochs =
+        Number.isFinite(importedEpochs) && importedEpochs >= 0
+          ? Math.floor(importedEpochs)
+          : Number(tab.epochs) || 0;
+      tab.showOutputSegment = Boolean(
+        network.show_output_segment ??
+          parsed?.show_output_segment ??
+          tab.showOutputSegment,
+      );
+      tab.layers = layers;
+      tab.activation = String(
+        network.activation ?? tab.activation ?? "logistic",
+      );
+      tab.learningRate = Number(
+        network.learning_rate ?? tab.learningRate ?? 0.1,
+      );
+      tab.state = clone(network.state);
+      tab.inputNeuronNames = inputNames;
+      tab.outputNeuronNames = outputNames;
+      tab.inputNeuronValues = inputValues;
+      tab.outputNeuronValues = outputValues;
+      tab.lossHistory = normalizeLossHistoryMap(network.loss_history);
+      normalizeTabNeuronIo(tab);
+      normalizeDatasetRows(tab);
+    });
+
+    activationMenuOpen = false;
+    await runLiveInferenceForTab(activeTabId, { ensureState: false });
+  }
+
+  // @ts-ignore
+  async function onProjectFileSelected(event) {
+    try {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) {
+        return;
+      }
+
+      const zipReader = new zip.ZipReader(new zip.BlobReader(file));
+      const entries = await zipReader.getEntries();
+
+      let networkJsonText = null;
+      let datasetCsvText = null;
+
+      for (const entry of entries) {
+        if (entry.filename === "network.json" && !entry.directory) {
+          // @ts-ignore
+          networkJsonText = await entry.getData(new zip.TextWriter());
+        } else if (entry.filename === "trainingsdata.csv" && !entry.directory) {
+          // @ts-ignore
+          datasetCsvText = await entry.getData(new zip.TextWriter());
+        }
+      }
+      await zipReader.close();
+
+      // 1. Netzwerk importieren
+      if (networkJsonText) {
+        await importNetworkFromJsonText(networkJsonText);
+      }
+
+      // 2. Trainingsdaten importieren (automatische Erkennung)
+      if (datasetCsvText) {
+        importDataset(datasetCsvText, {
+          openModalAfterImport: true,
+          keepCurrentState: true,
+        });
+      }
+    } catch (error) {
+      trainingImportError =
+        error instanceof Error ? error.message : String(error);
+      console.error(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  // @ts-ignore
   async function onNetworkFileSelected(event) {
     try {
       const file = event.currentTarget.files?.[0];
@@ -1011,67 +1191,78 @@
       }
 
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      const network = parsed?.network;
-
-      assertLoadedNetworkShape(network);
-
-      const layers = clone(network.layers);
-      const inputCount = layers[0];
-      const outputCount = layers[layers.length - 1];
-
-      const inputNames = Array.from({ length: inputCount }, (_, idx) => {
-        const raw = String(network.input_names?.[idx] ?? "").trim();
-        return raw.length > 0 ? raw : `input${idx + 1}`;
-      });
-
-      const outputNames = Array.from({ length: outputCount }, (_, idx) => {
-        const raw = String(network.output_names?.[idx] ?? "").trim();
-        return raw.length > 0 ? raw : `output${idx + 1}`;
-      });
-
-      const inputValues = Array.from({ length: inputCount }, (_, idx) =>
-        String(network.input_values?.[idx] ?? "0"),
-      );
-
-      const outputValues = Array.from({ length: outputCount }, (_, idx) =>
-        String(network.output_values?.[idx] ?? "-"),
-      );
-
-      // @ts-ignore
-      updateActiveTab((tab) => {
-        tab.name = String(parsed?.name ?? tab.name);
-        const importedEpochs = Number(parsed?.training_epochs);
-        tab.epochs =
-          Number.isFinite(importedEpochs) && importedEpochs >= 0
-            ? Math.floor(importedEpochs)
-            : Number(tab.epochs) || 0;
-        tab.showOutputSegment = Boolean(
-          network.show_output_segment ??
-            parsed?.show_output_segment ??
-            tab.showOutputSegment,
-        );
-        tab.layers = layers;
-        tab.activation = String(
-          network.activation ?? tab.activation ?? "logistic",
-        );
-        tab.learningRate = Number(
-          network.learning_rate ?? tab.learningRate ?? 0.1,
-        );
-        tab.state = clone(network.state);
-        tab.inputNeuronNames = inputNames;
-        tab.outputNeuronNames = outputNames;
-        tab.inputNeuronValues = inputValues;
-        tab.outputNeuronValues = outputValues;
-        tab.lossHistory = normalizeLossHistoryMap(network.loss_history);
-        normalizeTabNeuronIo(tab);
-        normalizeDatasetRows(tab);
-      });
-
-      activationMenuOpen = false;
-      await runLiveInferenceForTab(activeTabId, { ensureState: false });
+      await importNetworkFromJsonText(text);
     } catch (error) {
       console.log(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  // @ts-ignore
+  function importDataset(text, options = {}) {
+    // @ts-ignore
+    const { openModalAfterImport = false, keepCurrentState = false } = options;
+    trainingImportError = "";
+
+    const lines = text
+      .split(/\r?\n/)
+      // @ts-ignore
+      .map((line) => line.trim())
+      // @ts-ignore
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      throw new Error("CSV-Datei ist leer.");
+    }
+
+    // @ts-ignore
+    const { inputCount, outputCount } = parseNodeCountLine(lines[0]);
+    const delimiter = detectCsvDelimiter(
+      lines.length > 1 ? lines.slice(1) : lines,
+    );
+
+    // applyImportedDataset nutzt diese Werte als Zielstruktur.
+    pendingImportInputCount = inputCount;
+    pendingImportOutputCount = outputCount;
+    pendingImportDelimiter = delimiter;
+    pendingImportFirstLine = lines[0] ?? "";
+    pendingImportSecondLine = lines[1] ?? "";
+
+    const hasNamesInSecondLine = secondLineLooksLikeNames(
+      lines,
+      delimiter,
+      inputCount,
+      outputCount,
+    );
+
+    if (hasNamesInSecondLine) {
+      const importedNames = parseImportNames(
+        lines,
+        delimiter,
+        inputCount,
+        outputCount,
+      );
+      const parsedRows = parseImportRows(
+        lines,
+        delimiter,
+        2,
+        inputCount,
+        outputCount,
+      );
+      applyImportedDataset(parsedRows, importedNames, true, keepCurrentState);
+    } else {
+      const parsedRows = parseImportRows(
+        lines,
+        delimiter,
+        1,
+        inputCount,
+        outputCount,
+      );
+      applyImportedDataset(parsedRows, null, false, keepCurrentState);
+    }
+
+    closeDatasetImportPrompt();
+    if (openModalAfterImport) {
+      openDatasetModal();
     }
   }
 
@@ -1085,33 +1276,11 @@
       }
 
       const text = await file.text();
-      const lines = text
-        .split(/\r?\n/)
-        // @ts-ignore
-        .map((line) => line.trim())
-        // @ts-ignore
-        .filter((line) => line.length > 0);
-
-      if (lines.length === 0) {
-        throw new Error("CSV-Datei ist leer.");
-      }
-
-      // @ts-ignore
-      const { inputCount, outputCount } = parseNodeCountLine(lines[0]);
-      const delimiter = detectCsvDelimiter(
-        lines.length > 1 ? lines.slice(1) : lines,
-      );
-
-      pendingImportCsvText = text;
-      pendingImportFirstLine = lines[0];
-      pendingImportSecondLine = lines[1] ?? "(keine zweite Zeile vorhanden)";
-      pendingImportInputCount = inputCount;
-      pendingImportOutputCount = outputCount;
-      pendingImportDelimiter = delimiter;
-      datasetImportStep = "ask-second-line";
-      datasetImportPromptOpen = true;
+      importDataset(text);
     } catch (error) {
       closeDatasetImportPrompt();
+      trainingImportError =
+        error instanceof Error ? error.message : String(error);
       console.error(error instanceof Error ? error.message : String(error));
     }
   }
@@ -2466,6 +2635,35 @@
       tab.outputNeuronValues = Array.from({ length: outputCount }, () => "-");
     });
   }
+
+  async function exportCurrentProject() {
+    // get trainingsdata of current tab
+    const active = getActiveTab();
+    const trainingsdataReader = new zip.BlobReader(createDataSetCsv());
+
+    // get network-configuration
+    const networkReader = new zip.BlobReader(createCurrentNetworkBlob());
+
+    // zip both together and create download with zip.js
+    const zipFileWriter = new zip.BlobWriter();
+    const zipWriter = new zip.ZipWriter(zipFileWriter);
+    await zipWriter.add("trainingsdata.csv", trainingsdataReader);
+    await zipWriter.add("network.json", networkReader);
+    const zipFileBlob = await zipWriter.close();
+
+    // download
+    const url = URL.createObjectURL(zipFileBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${active.name.replace(/\s+/g, "_")}_project.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function triggerImportProject() {
+    // @ts-ignore
+    projectImportInputEl?.click();
+  }
 </script>
 
 <main class="app-shell">
@@ -2569,6 +2767,48 @@
         class="tab-add btn-hover"
         onclick={addTab}>+ Netz</button
       >
+
+      <div class="button-group save-network-group">
+        <span class="tooltip">
+          Projekt <img
+            src={publicAsset("circle-question-solid-full.svg")}
+            alt="Question"
+            width="18"
+            height="18"
+          />
+          <span class="tooltiptext tooltiptext-below"
+            >Hier kannst du ein komplettes Projekt speichern/laden
+            (Trainingsdaten + Netzkonfiguration).
+          </span>:
+        </span>
+
+        <button
+          class="btn-hover"
+          onclick={exportCurrentProject}
+          disabled={isTraining}
+        >
+          <img
+            src={publicAsset("floppy-disk-solid-full.svg")}
+            alt=""
+            width="20"
+            height="20"
+          />
+          Speichern</button
+        >
+        <button
+          class="btn-hover"
+          onclick={triggerImportProject}
+          disabled={isTraining}
+        >
+          <img
+            src={publicAsset("upload-solid-full.svg")}
+            alt=""
+            width="20"
+            height="20"
+          />
+          Öffnen</button
+        >
+      </div>
     </div>
   </header>
 
@@ -2586,7 +2826,7 @@
           <span class="tooltiptext"
             >Die Aktivierungsfunktion bestimmt, wie die Summe der gewichteten
             Inputs (x-Achse) in die Ausgabe eines Neurons umgewandelt wird
-            (y-Achse).<br />
+            (y-Achse).
           </span>
         </div>
         <div
@@ -2774,7 +3014,7 @@
           <div>
             Max:
             {#if hasLoss}
-              {lossStats.max.toFixed(6)}
+              {lossStats?.max.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -2782,7 +3022,7 @@
           <div>
             Min:
             {#if hasLoss}
-              {lossStats.min.toFixed(6)}
+              {lossStats?.min.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -2790,7 +3030,7 @@
           <div class="last-loss">
             Letzter:
             {#if hasLoss}
-              {lossStats.last.toFixed(6)}
+              {lossStats?.last.toFixed(6)}
             {:else}
               ---
             {/if}
@@ -2831,6 +3071,13 @@
         accept="application/json,.json"
         style="display:none"
         onchange={onNetworkFileSelected}
+      />
+      <input
+        bind:this={projectImportInputEl}
+        type="file"
+        accept="application/zip,.zip"
+        style="display:none"
+        onchange={onProjectFileSelected}
       />
       {#each activeTab.layers as count, layerIndex}
         <label>
@@ -3032,6 +3279,13 @@
     bottom: 150%;
     left: 50%;
     margin-left: -60px;
+    font-size: 14px;
+  }
+
+  .tooltiptext-below {
+    bottom: auto;
+    top: 100%;
+    margin-top: 10px; /* Kleiner Abstand nach unten */
   }
 
   .tooltiptext::after {
@@ -3043,6 +3297,12 @@
     border-width: 5px;
     border-style: solid;
     border-color: black transparent transparent transparent;
+  }
+
+  .tooltiptext-below::after {
+    top: auto;
+    bottom: 100%;
+    border-color: transparent transparent black transparent;
   }
 
   .tooltip:hover .tooltiptext {
@@ -3166,12 +3426,21 @@
   .toolbar,
   .network-controls,
   .network-graph-wrap {
+    position: relative; /* Erforderlich für z-index */
+    z-index: 1;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 14px;
     backdrop-filter: blur(8px);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
     padding: 0.85rem;
+  }
+
+  .tabs-header:hover,
+  .toolbar:hover,
+  .network-graph-wrap:hover {
+    /* Bringt die Sektion, mit der man interagiert, in den Vordergrund */
+    z-index: 10;
   }
 
   .tabs-header {
@@ -3187,9 +3456,10 @@
 
   .tab-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.45rem;
     align-items: center;
-    overflow-x: auto;
+    overflow-x: visible; /* Wichtig, damit Tooltips nicht abgeschnitten werden */
     padding-bottom: 0.2rem;
   }
 

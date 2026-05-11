@@ -196,7 +196,7 @@
     position: absolute;
     background-color: #bebebe;
     transition: opacity 0.2s;
-    color: black;
+    color: rgb(49, 49, 49);
     transition:
       background-color 0.1s ease,
       color 0.1s ease;
@@ -205,7 +205,7 @@
 
   .segment.active {
     background-color: #1f1f1f;
-    color: rgb(209, 209, 209);
+    color: rgb(175, 175, 175);
   }
 
   /* horizontale Segmente */
