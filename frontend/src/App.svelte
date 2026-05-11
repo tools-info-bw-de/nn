@@ -3726,6 +3726,18 @@
     stroke-width: 2;
   }
 
+  @media (max-width: 1500px) {
+    .page-info {
+      position: inherit !important;
+    }
+
+    .page-info-dropdown {
+      position: absolute;
+      top: 65px;
+      z-index: 10;
+    }
+  }
+
   .page-info {
     position: absolute;
     top: 0.8rem;

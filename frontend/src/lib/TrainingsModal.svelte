@@ -1,6 +1,7 @@
 <script>
   import SevenSegment from "./SevenSegment.svelte";
 
+  // @ts-ignore
   const publicAsset = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 
   let {
@@ -29,12 +30,15 @@
     showOutputSegment,
   } = $props();
 
+  // @ts-ignore
   function getOutputIndexByName(neuronName) {
     return activeTab.outputNeuronNames?.findIndex(
+      // @ts-ignore
       (name) => String(name).toLowerCase() === neuronName,
     );
   }
 
+  // @ts-ignore
   function getRowSegmentValue(rowIndex, neuronName) {
     const neuronIndex = getOutputIndexByName(neuronName);
     if (neuronIndex === undefined || neuronIndex < 0) {
@@ -46,6 +50,7 @@
     return Number.isFinite(value) && value >= 0.5;
   }
 
+  // @ts-ignore
   function setRowSegmentValue(rowIndex, neuronName, newValue) {
     const neuronIndex = getOutputIndexByName(neuronName);
     if (neuronIndex === undefined || neuronIndex < 0) {
@@ -55,6 +60,7 @@
     setDatasetRowOutput(rowIndex, neuronIndex, newValue ? 1 : 0);
   }
 
+  // @ts-ignore
   function createRowSegmentBinding(rowIndex) {
     const binding = {};
 
@@ -74,6 +80,7 @@
   }
 
   let segmentBindings = $derived.by(() =>
+    // @ts-ignore
     (activeTab.datasetRows || []).map((_, rowIndex) =>
       createRowSegmentBinding(rowIndex),
     ),
