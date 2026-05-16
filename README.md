@@ -1,6 +1,4 @@
-# nn
-
-Interactive Neural Network
+# Interactive Neural Network
 
 Webseite verfügbar unter: https://tools.info-bw.de/nn
 
